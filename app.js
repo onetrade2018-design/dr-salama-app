@@ -120,13 +120,48 @@
   }
 
   // يرجع { data, stale, at }
+  // swr: لو البيانات محفوظة على الموبايل بنعرضها فوراً، ونجيب الجديد في الخلفية ونحدّث الشاشة لو اتغير حاجة
+  const SWR_FRESH_MS = 20000;
+  const inflight = new Set();
+  let rerenderT = null;
+  function scheduleRerender() {
+    clearTimeout(rerenderT);
+    rerenderT = setTimeout(() => {
+      const y = window.scrollY;
+      route(true);
+      setTimeout(() => window.scrollTo(0, y), 60);
+    }, 200);
+  }
+  function refreshInBackground(fn, args, key, cached) {
+    if (inflight.has(key)) return;
+    inflight.add(key);
+    const hash = location.hash;
+    sb.rpc(fn, args).then(({ data, error }) => {
+      inflight.delete(key);
+      if (error) { if (isNetErr(error)) setOffline(true); return; }
+      setOffline(false);
+      const changed = JSON.stringify(data) !== JSON.stringify(cached.v);
+      cachePut(key, data);
+      if (changed && location.hash === hash) scheduleRerender();
+    }).catch(() => { inflight.delete(key); setOffline(true); });
+  }
+
   async function call(fn, args = {}, opts = {}) {
     const key = fn + ":" + JSON.stringify(args);
+    if (opts.swr) {
+      const c = cacheGet(key);
+      if (c) {
+        if (Date.now() - c.t > SWR_FRESH_MS) refreshInBackground(fn, args, key, c);
+        return { data: c.v, stale: false, cached: true, at: c.t };
+      }
+    }
     try {
       const { data, error } = await sb.rpc(fn, args);
       if (error) {
         if (isNetErr(error)) throw error;
-        const msg = error.code === "42501" ? "غير مسموح لك تشوف البيانات دي" : (error.message || "حصل خطأ");
+        const msg = error.code === "42501" ? "غير مسموح لك تشوف البيانات دي"
+          : /statement timeout|57014/i.test((error.message || "") + error.code) ? "السيرفر اتأخر في الرد — اسحب الصفحة لتحت أو جرب تاني بعد شوية"
+          : (error.message || "حصل خطأ");
         throw new AppError(msg, "server");
       }
       if (opts.cache !== false) cachePut(key, data);
@@ -344,7 +379,7 @@
     renderInstallCard();
     if (isBoss()) renderPushCard(document.getElementById("push"));
 
-    call("app_sync_status").then((r) => {
+    call("app_sync_status", {}, { swr: true }).then((r) => {
       const s = r.data || {};
       const mins = s.last_sync ? (Date.now() - new Date(s.last_sync).getTime()) / 60000 : 1e9;
       const cls = mins <= 15 ? "ok" : mins <= 120 ? "warn" : "bad";
@@ -360,7 +395,7 @@
     }).catch(() => {});
 
     if (isBoss()) {
-      call("alerts_list").then((r) => {
+      call("alerts_list", {}, { swr: true }).then((r) => {
         const a = r.data || {}, el = document.getElementById("alerts");
         if (!el) return;
         const parts = [
@@ -378,7 +413,7 @@
         <div class="section-title"><span>حركة النهارده — ${esc(dayName(today))}</span>
           <a class="small" href="#/report/${addDays(today, -1)}">الأيام اللي فاتت</a></div>
         <div id="todayBody">${loading}</div>`;
-      call("daily_report", { p_date: today }).then((r) => {
+      call("daily_report", { p_date: today }, { swr: true }).then((r) => {
         const box = document.getElementById("todayBody");
         if (box) box.innerHTML = reportBody(r, today, false);
       }).catch((e) => { const box = document.getElementById("todayBody"); if (box) box.innerHTML = errBox(e); });
@@ -444,7 +479,7 @@
   async function viewParty(key) {
     const main = shell({ title: "كشف حساب", back: true }, loading);
     let r;
-    try { r = await call("party_detail", { p_key: key }); }
+    try { r = await call("party_detail", { p_key: key }, { swr: true }); }
     catch (e) { main.innerHTML = errBox(e); return; }
     const p = r.data;
     document.querySelector(".topbar h1").textContent = p.name;
@@ -509,7 +544,7 @@
   async function viewInvoice(type, no) {
     const main = shell({ title: `${INV[type] || "فاتورة"} ${no}`, back: true }, loading);
     let r;
-    try { r = await call("invoice_detail", { p_type: type, p_no: no }); }
+    try { r = await call("invoice_detail", { p_type: type, p_no: no }, { swr: true }); }
     catch (e) { main.innerHTML = errBox(e); return; }
     const v = r.data;
     const showCost = !(state.me.role === "sales" && type.startsWith("purchase"));
@@ -606,7 +641,7 @@
     const main = shell({ title: "كارت صنف", back: true }, loading);
     let days = Number(sessionStorage.getItem("item-days") || 365);
     let r;
-    try { r = await call("item_card", { p_code: code, p_days: days }); }
+    try { r = await call("item_card", { p_code: code, p_days: days }, { swr: true }); }
     catch (e) { main.innerHTML = errBox(e); return; }
     const v = r.data;
     document.querySelector(".topbar h1").textContent = v.name;
@@ -687,7 +722,7 @@
     document.getElementById("dt").onchange = (e) => { if (e.target.value) location.hash = "#/report/" + e.target.value; };
 
     let r;
-    try { r = await call("daily_report", { p_date: date }); }
+    try { r = await call("daily_report", { p_date: date }, { swr: true }); }
     catch (e) { document.getElementById("rep").innerHTML = errBox(e); return; }
     document.getElementById("rep").innerHTML = reportBody(r, date, true);
   }
@@ -1140,7 +1175,7 @@
       if (!box) return;
       box.innerHTML = loading; tot.textContent = "";
       try {
-        const r = await call("top_balances", { p_kind: kind, p_limit: 20 });
+        const r = await call("top_balances", { p_kind: kind, p_limit: 20 }, { swr: true });
         if (!document.getElementById("toplist")) return;
         const d = r.data || {}, list = d.list || [];
         const label = kind === "customers" ? "إجمالي اللي على العملاء" : kind === "suppliers" ? "إجمالي اللي للموردين" : "قيمة المخزون بالتكلفة";
@@ -1168,8 +1203,8 @@
     };
     loadTop();
     const [st, cu] = await Promise.all([
-      call("stock_analysis", { p_status: "attention", p_q: "", p_limit: 1 }).catch((e) => ({ err: e })),
-      call("customer_analysis", { p_filter: "overdue", p_q: "", p_limit: 1 }).catch((e) => ({ err: e })),
+      call("stock_analysis", { p_status: "attention", p_q: "", p_limit: 1 }, { swr: true }).catch((e) => ({ err: e })),
+      call("customer_analysis", { p_filter: "overdue", p_q: "", p_limit: 1 }, { swr: true }).catch((e) => ({ err: e })),
     ]);
     const el = document.getElementById("hubk");
     if (!el) return;
@@ -1322,7 +1357,7 @@
     if (!isBoss()) { location.hash = "#/"; return; }
     const main = shell({ title: "التنبيهات", back: true }, loading);
     let r;
-    try { r = await call("alerts_list"); } catch (e) { main.innerHTML = errBox(e); return; }
+    try { r = await call("alerts_list", {}, { swr: true }); } catch (e) { main.innerHTML = errBox(e); return; }
     const a = r.data || {};
     const sec = (title, list, row, note) => {
       if (!list || !list.length) return "";
@@ -1355,7 +1390,7 @@
   // ---------- تحليل الصنف (جوه كارت الصنف) ----------
   async function renderItemAnalysis(el, code) {
     let r;
-    try { r = await call("item_analysis", { p_code: code }); } catch (e) { el.innerHTML = ""; return; }
+    try { r = await call("item_analysis", { p_code: code }, { swr: true }); } catch (e) { el.innerHTML = ""; return; }
     const a = r.data;
     if (!a || !document.body.contains(el)) { el.innerHTML = ""; return; }
     const pts = (a.monthly || []).map((m) => ({ m: m.m, v: m.sold }));
@@ -1430,7 +1465,7 @@
   // ---------- تحليل العميل/المورد (جوه كشف الحساب) ----------
   async function renderPartyAnalysis(el, key) {
     let r;
-    try { r = await call("party_analysis", { p_key: key }); } catch (e) { el.innerHTML = ""; return; }
+    try { r = await call("party_analysis", { p_key: key }, { swr: true }); } catch (e) { el.innerHTML = ""; return; }
     if (!document.body.contains(el)) return;
     const c = r.data && r.data.customer, s = r.data && r.data.supplier;
     let html = "";
@@ -1585,13 +1620,13 @@
     [/^#\/alerts$/, viewAlerts],
     [/^#\/settings$/, viewSettings],
   ];
-  function route() {
+  function route(keepScroll) {
     if (!state.me) return;
     const h = location.hash || "#/";
     for (const [re, fn] of routes) {
       const m = h.match(re);
       if (m) {
-        window.scrollTo(0, 0);
+        if (keepScroll !== true) window.scrollTo(0, 0);
         fn(...m.slice(1).map((x) => (x == null ? x : decodeURIComponent(x))));
         return;
       }
