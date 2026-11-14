@@ -1088,7 +1088,7 @@
       el.innerHTML = `
         <div class="card stack">
           <div class="row">
-            <div class="grow"><b>إشعارات التقارير</b><div class="small muted">اليومي كل يوم 12 بالليل • الأسبوعي الخميس 12 بالليل • الشهري آخر يوم في الشهر 12 بالليل • تنبيه المتأخرين في السداد الخميس وآخر الشهر</div></div>
+            <div class="grow"><b>إشعارات التقارير</b><div class="small muted">اليومي كل يوم 12 بالليل • الأسبوعي الخميس 12 بالليل • الشهري آخر يوم في الشهر 12 بالليل • تنبيه المتأخرين في السداد الخميس وآخر الشهر • وإشعارات فورية لما عميل يعدي مهلة السداد أو صنف يوصل حد الطلب أو الأمان أو يخلص</div></div>
             <label class="switch"><input type="checkbox" id="ptoggle" ${on ? "checked" : ""}><span></span></label>
           </div>
           ${Notification.permission === "denied" ? `<div class="small" style="color:var(--danger)">الإشعارات مقفولة للموقع ده. افتح إعدادات Chrome ← إعدادات المواقع ← الإشعارات، واسمح بيها.</div>` : ""}
@@ -1655,7 +1655,15 @@
       sec("عملاء متأخرين في الشراء", a.late_buyers, (x) => partyLink(x, `${tagAbc(x.abc)} آخر فاتورة من <span class="num">${x.days}</span> يوم • عادته كل <span class="num">${Math.round(x.avg_gap || 0)}</span> يوم`)),
       sec("أصناف زيادة عن الحد الأقصى", a.overstock, (x) => itemLink(x, `رصيد <span class="num">${qty(x.stock)}</span> • الحد الأقصى <span class="num">${qty(x.max)}</span>${x.days_cover != null ? ` • يكفي <span class="num">${qty(x.days_cover)}</span> يوم` : ""}`)),
     ].join("");
-    main.innerHTML = staleNote(r) + (html || empty("مفيش تنبيهات دلوقتي 👌"));
+    main.innerHTML = staleNote(r) + `<div id="recent"></div>` + (html || empty("مفيش تنبيهات دلوقتي 👌"));
+    call("recent_alert_events", { p_limit: 30 }, { swr: true }).then((rr) => {
+      const list = rr.data || [], el = document.getElementById("recent");
+      if (!el || !list.length) return;
+      el.innerHTML = `<div class="section-title"><span>آخر الإشعارات الفورية</span><small>${list.length}</small></div>
+        <div class="list">${list.slice(0, 8).map((e) => `<a class="mv" href="${esc((e.url || "#/").replace(/^\.\//, ""))}">
+          <div class="t">${esc(e.title)}</div><div class="d" style="text-align:left">${esc(ago(e.at))}</div>
+          <div class="d" style="grid-column:1/-1">${esc(e.body)}</div></a>`).join("")}</div>`;
+    }).catch(() => {});
     main.querySelectorAll("[data-more]").forEach((b) => (b.onclick = () => {
       const list = document.getElementById(b.dataset.more);
       list.insertAdjacentHTML("beforeend", document.getElementById(b.dataset.more + "-all").innerHTML);
@@ -1853,11 +1861,26 @@
         ${SETTINGS.map(([k, l, n]) => `<label class="field"><span>${l}</span><input class="input" inputmode="decimal" name="${k}" value="${esc(cur[k] != null ? cur[k] : "")}">${n ? `<small class="muted">${n}</small>` : ""}</label>`).join("")}
         <button class="btn" type="submit">حفظ</button>
       </form>
+      <div class="section-title"><span>الإشعارات الفورية</span></div>
+      <div class="card stack">
+        <div class="row between" style="min-height:48px"><div class="grow"><b>الأصناف</b><div class="small muted">لما صنف يوصل نقطة الطلب، ولما ينزل تحت مخزون الأمان، ولما يخلص</div></div>
+          <label class="switch"><input type="checkbox" id="al_items" ${cur.alerts_items !== false ? "checked" : ""}><span></span></label></div>
+        <div class="row between" style="min-height:48px"><div class="grow"><b>العملاء</b><div class="small muted">لما عميل يعدي مهلة السداد</div></div>
+          <label class="switch"><input type="checkbox" id="al_overdue" ${cur.alerts_overdue !== false ? "checked" : ""}><span></span></label></div>
+        <div class="small muted">الإشعارات اللي بتطلع من 12 بالليل لـ 8 الصبح بتوصل الساعة 8 الصبح.</div>
+      </div>
       <div class="card stack">
         <b>إعادة حساب التحليل دلوقتي</b>
         <div class="small muted">التحليل بيتحسب لوحده كل 3 ساعات. استخدم الزرار ده لو غيرت إعدادات وعايز تشوف أثرها على الأرقام اللي بتتحسب (زي نمط العملاء والدوران) فوراً.</div>
         <button class="btn soft" id="recalc">${I.refresh} احسب دلوقتي</button>
       </div>`;
+    [["al_items", "alerts_items"], ["al_overdue", "alerts_overdue"]].forEach(([id, key]) => {
+      const cb = document.getElementById(id);
+      if (cb) cb.onchange = async () => {
+        const { error: e3 } = await sb.from("app_settings").update({ value: cb.checked, updated_at: new Date().toISOString(), updated_by: state.me.id }).eq("key", key);
+        if (e3) { toast(e3.message); cb.checked = !cb.checked; } else toast(cb.checked ? "اتفعّلت ✅" : "اتقفلت");
+      };
+    });
     document.getElementById("setf").onsubmit = async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
