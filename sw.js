@@ -1,10 +1,12 @@
 // مخزن د/محمد سلامه — Service Worker: تشغيل بدون إنترنت + الإشعارات
-const VERSION = "v1.9.0";
+const VERSION = "v2.0.0";
 const SHELL = `shell-${VERSION}`;
 const FILES = [
   "./", "./index.html", "./styles.css", "./app.js", "./config.js",
   "./vendor/supabase.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/badge-96.png",
+  "./fonts/plex-arabic-400.woff2", "./fonts/plex-arabic-500.woff2", "./fonts/plex-arabic-600.woff2", "./fonts/plex-arabic-700.woff2", "./fonts/plex-latin-400.woff2", "./fonts/plex-latin-500.woff2", "./fonts/plex-latin-600.woff2", "./fonts/plex-latin-700.woff2",
+  "./emoji/m2.webp", "./emoji/m1.webp", "./emoji/m0.webp", "./emoji/n1.webp", "./emoji/n2.webp",
 ];
 
 self.addEventListener("install", (e) => {

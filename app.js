@@ -11,7 +11,9 @@
   const state = { me: null, offlineSince: null, installPrompt: null };
 
   // ================= أدوات =================
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // الخط فيه زخرفة لكلمة "محمد" بتظهر غريبة — بنكسرها بحرف وصل خفي (للعرض بس)
+  const noLig = (t) => String(t).replace(/محمد/g, "مح\u200dمد");
+  const esc = (s) => noLig(String(s == null ? "" : s)).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const nf2 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
   const money = (n) => nf0.format(Math.round(Number(n) || 0));
@@ -72,6 +74,12 @@
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
     chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
     refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+    share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3"/></svg>',
+    cust: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c.9-3.6 3.7-5.6 7-5.6s6.1 2 7 5.6"/></svg>',
+    truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v10H3zM14 9h4l3 3.5V16h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
+    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/></svg>',
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2"/></svg>',
   };
 
@@ -82,6 +90,66 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => (t.hidden = true), ms);
   }
+
+  // أيقونة الحساب: نوعه (عميل/مورد/الاتنين) ولونها حسب الرصيد + تصنيفه
+  function kindAvatar(p) {
+    const b = Number(p.balance) || 0;
+    const cls = b >= 0.5 ? "k-owe" : b <= -0.5 ? "k-credit" : "k-zero";
+    const ico = p.is_customer && p.is_supplier ? I.swap : p.is_supplier ? I.truck : I.cust;
+    return `<div class="avatar ${cls}">${ico}${p.abc ? `<i class="abc ${esc(p.abc)}">${esc(p.abc)}</i>` : ""}</div>`;
+  }
+  // رسم صغير لحركة آخر 12 شهر
+  function sparkSvg(vals, color) {
+    vals = (vals || []).map((v) => Math.max(0, Number(v) || 0));
+    if (vals.length < 2 || !vals.some((v) => v > 0)) return "";
+    const W = 64, H = 24, max = Math.max(...vals), n = vals.length;
+    const pts = vals.map((v, i) => [W - (i / (n - 1)) * W, H - 2 - (v / max) * (H - 5)]);   // الأحدث على الشمال
+    const d = pts.map((q, i) => `${i ? "L" : "M"}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join(" ");
+    const last = pts[n - 1];
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" style="--sc:${color || "#F57C00"}" aria-hidden="true"><path class="a" d="${d} L0 ${H} L${W} ${H} Z"/><path class="l" d="${d}"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2"/></svg>`;
+  }
+  const monthVals = (m) => (m || []).map((x) => (x && typeof x === "object" ? (x.sold != null ? x.sold : x.v) : x));
+  // الأرقام بتعدّ لحد قيمتها (مرة واحدة لما الصفحة تفتح)
+  function countUp(root) {
+    if (state.quiet || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+    (root || document).querySelectorAll("[data-count]").forEach((el) => {
+      const to = Number(el.dataset.count) || 0;
+      if (!to) return;
+      const t0 = performance.now(), D = 900;
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = money(to * e);
+        if (k < 1 && el.isConnected) requestAnimationFrame(step);
+      };
+      el.textContent = "0";
+      requestAnimationFrame(step);
+    });
+  }
+  // اسحب الشاشة لتحت عشان تحدّث
+  (function pullToRefresh() {
+    let y0 = null, dy = 0;
+    const el = document.createElement("div");
+    el.className = "ptr"; el.innerHTML = I.refresh;
+    document.body.appendChild(el);
+    addEventListener("touchstart", (e) => { y0 = state.me && window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+    addEventListener("touchmove", (e) => {
+      if (y0 == null) return;
+      dy = Math.max(0, e.touches[0].clientY - y0);
+      if (window.scrollY > 0) { y0 = null; el.style.transform = ""; return; }
+      el.style.transition = "none";
+      el.style.transform = `translateY(${Math.min(dy * 0.45, 76) - 60}px) rotate(${Math.round(dy * 2)}deg)`;
+    }, { passive: true });
+    addEventListener("touchend", () => {
+      if (y0 == null) return;
+      el.style.transition = "";
+      if (dy > 120) {
+        el.classList.add("go"); el.style.transform = "translateY(18px)";
+        state.force = true; route(true);
+        setTimeout(() => { state.force = false; el.classList.remove("go"); el.style.transform = ""; }, 1300);
+      } else el.style.transform = "";
+      y0 = null; dy = 0;
+    });
+  })();
 
   // ================= الاتصال بالسحابة + الحفظ للعمل بدون إنترنت =================
   const CACHE_PREFIX = "c1:";
@@ -148,7 +216,7 @@
 
   async function call(fn, args = {}, opts = {}) {
     const key = fn + ":" + JSON.stringify(args);
-    if (opts.swr) {
+    if (opts.swr && !state.force) {
       const c = cacheGet(key);
       if (c) {
         if (Date.now() - c.t > SWR_FRESH_MS) refreshInBackground(fn, args, key, c);
@@ -204,7 +272,7 @@
         ${actions}
       </header>
       <div id="offline-bar" class="offline-bar" hidden></div>
-      <main id="main" class="${nav ? "" : "no-nav"}">${body}</main>
+      <main id="main" class="${nav ? "" : "no-nav"}${state.quiet ? "" : " enter"}">${body}</main>
       ${nav ? `<nav class="bottomnav">
         ${navLink("#/", "الرئيسية", I.home, tab === "home")}
         ${navLink("#/parties", "العملاء", I.people, tab === "parties")}
@@ -233,7 +301,9 @@
     if (history.state && history.state.d > 0) history.back();
     else location.hash = "#/";
   }
-  const loading = '<div class="loader"><div class="spin"></div></div>';
+  const skRow = '<div class="sk-row"><div class="sk c"></div><div class="grow"><div class="sk l1"></div><div class="sk l2"></div></div><div class="sk v"></div></div>';
+  const loading = `<div class="skel"><div class="sk-card">${skRow.repeat(4)}</div></div>`;
+  const loadingHero = `<div class="skel"><div class="sk hero"></div><div class="sk-card">${skRow.repeat(3)}</div></div>`;
   const errBox = (e) => `<div class="err">${esc(e.message || e)}</div>`;
   const empty = (msg) => `<div class="empty">${I.search}<div>${esc(msg)}</div></div>`;
 
@@ -243,7 +313,7 @@
       <div class="auth-wrap">
         <div class="brand">
           <img src="icons/icon-192.png" alt="">
-          <h1>مخزن د/محمد سلامه</h1>
+          <h1>مخزن د/مح&zwj;مد سلامه</h1>
           <div class="muted">الأرصدة والأصناف والتقرير اليومي</div>
         </div>
         <div class="tabs">
@@ -309,7 +379,7 @@
   function renderPending() {
     $app.innerHTML = `
       <div class="auth-wrap">
-        <div class="brand"><img src="icons/icon-192.png" alt=""><h1>مخزن د/محمد سلامه</h1></div>
+        <div class="brand"><img src="icons/icon-192.png" alt=""><h1>مخزن د/مح&zwj;مد سلامه</h1></div>
         <div class="card center stack">
           <h2>حسابك مستني موافقة المدير</h2>
           <p class="muted">أول ما المدير يفعّل حسابك ويحدد صلاحيتك، هتقدر تدخل على البيانات.</p>
@@ -330,25 +400,200 @@
     renderAuth();
   }
 
+  // ================= مشاركة كصورة (واتساب) =================
+  const shareBtn = `<button class="icon-btn share" id="share" aria-label="مشاركة كصورة" disabled>${I.share}</button>`;
+  function wireShare(fn) {
+    const b = document.getElementById("share");
+    if (!b) return;
+    b.disabled = false;
+    b.onclick = async () => {
+      if (b.dataset.busy) return;
+      b.dataset.busy = "1";
+      try { await fn(); } catch (e) { if (e && e.name !== "AbortError") toast("ماقدرتش أعمل الصورة: " + (e.message || e)); }
+      delete b.dataset.busy;
+    };
+  }
+  let logoImg = null;
+  function loadLogo() {
+    if (logoImg) return Promise.resolve(logoImg);
+    return new Promise((res) => { const im = new Image(); im.onload = () => res((logoImg = im)); im.onerror = () => res(null); im.src = "icons/icon-192.png"; });
+  }
+  // spec: { title, sub, hero:{label,value,note,color}, badge:{text,color}, kpis:[{l,v,s,c}], lists:[{title, rows:[{l,s,v,c}]}], file }
+  async function shareImage(spec) {
+    const F = '"Plex Arabic", "Noto Sans Arabic", Tahoma, sans-serif';
+    try { await Promise.all([document.fonts.load(`700 40px ${F}`), document.fonts.load(`400 30px ${F}`), document.fonts.load(`600 30px ${F}`)]); } catch (e) { /* */ }
+    const logo = await loadLogo();
+    const W = 1080, P = 56, GAP = 24;
+    const kpis = spec.kpis || [], lists = (spec.lists || []).filter((l) => l.rows && l.rows.length);
+    const kRows = Math.ceil(kpis.length / 2);
+    let H = 300 + (spec.hero ? 250 + GAP : 0) + (kpis.length ? kRows * (176 + GAP) : 0);
+    lists.forEach((l) => (H += 90 + l.rows.length * 96 + GAP));
+    H += 110;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const x = cv.getContext("2d");
+    x.direction = "rtl";
+    const font = (w, sz) => (x.font = `${w} ${sz}px ${F}`);
+    const rr = (X, Y, w, h, r) => { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath(); };
+    const fit = (t, maxW) => { t = String(t == null ? "" : t); if (x.measureText(t).width <= maxW) return t; while (t.length > 1 && x.measureText(t + "…").width > maxW) t = t.slice(0, -1); return t + "…"; };
+    const txt = (t, X, Y, align, color, ltr) => { x.fillStyle = color; x.textAlign = align; x.direction = ltr ? "ltr" : "rtl"; x.fillText(ltr ? "\u2066" + t + "\u2069" : noLig(t), X, Y); x.direction = "rtl"; };
+    // الخلفية
+    x.fillStyle = "#EEF2F7"; x.fillRect(0, 0, W, H);
+    // الهيدر الكحلي
+    const g = x.createLinearGradient(W, 0, 0, 260); g.addColorStop(0, "#1D4E86"); g.addColorStop(0.55, "#12345C"); g.addColorStop(1, "#0B2140");
+    x.fillStyle = g; x.fillRect(0, 0, W, 260);
+    x.strokeStyle = "rgba(255,255,255,.04)"; x.lineWidth = 1;
+    for (let i = 0; i < W; i += 36) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, 260); x.stroke(); }
+    for (let i = 0; i < 260; i += 36) { x.beginPath(); x.moveTo(0, i); x.lineTo(W, i); x.stroke(); }
+    const og = x.createLinearGradient(W, 0, 0, 0); og.addColorStop(0, "#F57C00"); og.addColorStop(0.6, "#FFB04D"); og.addColorStop(1, "rgba(255,176,77,0)");
+    x.fillStyle = og; x.fillRect(0, 0, W, 8);
+    if (logo) { x.save(); rr(W - P - 104, 64, 104, 104, 26); x.clip(); x.drawImage(logo, W - P - 104, 64, 104, 104); x.restore(); }
+    font(700, 52); txt(fit(spec.title, W - 2 * P - 140), W - P - 128, 118, "right", "#FFFFFF");
+    font(400, 30); txt(fit(spec.sub || "", W - 2 * P - 140), W - P - 128, 166, "right", "rgba(255,255,255,.72)");
+    font(600, 26); txt("مخزن د/محمد سلامه", W - P, 226, "right", "#FFA347");
+    if (spec.badge) {
+      font(700, 30);
+      const tw = x.measureText(noLig(spec.badge.text)).width, nw = spec.badge.num ? x.measureText(spec.badge.num).width + 14 : 0, bw = tw + nw + 56;
+      rr(P, 196, bw, 50, 25); x.fillStyle = spec.badge.color; x.fill();
+      txt(spec.badge.text, P + bw - 28, 231, "right", "#FFFFFF");
+      if (spec.badge.num) txt(spec.badge.num, P + 28, 231, "left", "#FFFFFF", true);
+    }
+    let y = 300;
+    const card = (X, Y, w, h) => { x.save(); x.shadowColor = "rgba(15,40,75,.10)"; x.shadowBlur = 24; x.shadowOffsetY = 6; rr(X, Y, w, h, 26); x.fillStyle = "#FFFFFF"; x.fill(); x.restore(); };
+    if (spec.hero) {
+      const h = spec.hero; card(P, y, W - 2 * P, 250);
+      x.fillStyle = "#F57C00"; rr(W - P - 10, y + 40, 10, 170, 5); x.fill();
+      font(600, 32); txt(h.label, W - P - 44, y + 74, "right", "#687586");
+      font(700, 96); txt(h.value, W - P - 44, y + 178, "right", h.color || "#0B2140", true);
+      if (h.note) { font(600, 30); txt(fit(h.note, 420), P + 40, y + 178, "left", h.noteColor || "#687586"); }
+      y += 250 + GAP;
+    }
+    const cw = (W - 2 * P - GAP) / 2;
+    kpis.forEach((k, i) => {
+      const col = i % 2, X = col === 0 ? W - P - cw : P, Y = y + Math.floor(i / 2) * (176 + GAP);
+      card(X, Y, cw, 176);
+      font(600, 28); txt(fit(k.l, cw - 60), X + cw - 30, Y + 52, "right", "#687586");
+      font(700, 52); txt(k.v, X + cw - 30, Y + 118, "right", k.c || "#1F2A37", true);
+      if (k.s) { font(600, 26); txt(fit(k.s, cw - 60), X + cw - 30, Y + 156, "right", k.sc || "#687586"); }
+    });
+    if (kpis.length) y += kRows * (176 + GAP);
+    lists.forEach((l) => {
+      const h = 90 + l.rows.length * 96; card(P, y, W - 2 * P, h);
+      x.fillStyle = "#F57C00"; rr(W - P - 40, y + 34, 8, 30, 4); x.fill();
+      font(700, 34); txt(l.title, W - P - 58, y + 62, "right", "#1F2A37");
+      l.rows.forEach((r, i) => {
+        const ry = y + 90 + i * 96;
+        x.fillStyle = "#E3E9F1"; x.fillRect(P + 30, ry, W - 2 * P - 60, 2);
+        font(700, 34); const vw = x.measureText(String(r.v)).width;
+        txt(String(r.v), P + 36, ry + 60, "left", r.c || "#1F2A37", true);
+        font(600, 32); txt(fit(r.l, W - 2 * P - 120 - vw), W - P - 36, ry + (r.s ? 46 : 60), "right", "#1F2A37");
+        if (r.s) { font(400, 25); txt(fit(r.s, W - 2 * P - 120 - vw), W - P - 36, ry + 82, "right", "#687586"); }
+      });
+      y += h + GAP;
+    });
+    const now = new Date(), stamp = `${fmtDate(cairoToday())} ${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" }).format(now)}`;
+    font(400, 26); txt(`اتعمل من تطبيق مخزن د/محمد سلامه • ${stamp}`, W / 2, H - 50, "center", "#8A97A8");
+    const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+    const file = new File([blob], (spec.file || "report") + ".png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: spec.title });
+    } else {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast("الصورة اتحفظت — ابعتها من الصور على واتساب");
+    }
+    return cv;
+  }
+  const pctTxt = (c, p) => { c = Number(c) || 0; p = Number(p) || 0; if (!p) return c ? "جديد" : ""; const v = Math.round((c - p) / p * 100); return v === 0 ? "زي اللي فات" : `${v > 0 ? "▲" : "▼"} ${Math.abs(v)}%`; };
+  const pctCol = (c, p) => ((Number(c) || 0) >= (Number(p) || 0) ? "#2E7D32" : "#C62828");
+  function shareDaily(d, date) {
+    const t = d.totals || {};
+    const sales = (d.sales || []).slice().sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 6);
+    const cols = (d.collections || []).slice().sort((a, b) => (b.amount || 0) - (a.amount || 0)).slice(0, 5);
+    return shareImage({
+      title: "التقرير اليومي", sub: dayName(date), file: "daily-" + date,
+      hero: { label: "المبيعات", value: money(t.sales), color: "#E2580C", note: `${t.sales_count || 0} فاتورة • آجل ${money(t.sales_credit)}` },
+      kpis: [
+        { l: "التحصيلات من العملاء", v: money(t.collections), c: "#2E7D32", s: `${t.collections_count || 0} سند` },
+        { l: "المشتريات", v: money(t.purchases), s: `${t.purchases_count || 0} فاتورة` },
+        { l: "سداد للموردين", v: money(t.supplier_payments), c: "#D9480F" },
+        { l: "المرتجعات", v: money(t.sales_returns), s: `مرتجع شراء ${money(t.purchase_returns)}` },
+      ],
+      lists: [
+        { title: "أكبر فواتير البيع", rows: sales.map((v) => ({ l: v.party, s: `فاتورة ${v.no} • ${(v.lines || []).length} صنف`, v: money(v.total) })) },
+        { title: "أكبر التحصيلات", rows: cols.map((v) => ({ l: v.party, s: v.kind || "", v: money(v.amount), c: "#2E7D32" })) },
+      ],
+    });
+  }
+  function sharePeriod(w, isWeek, label, prevLabel) {
+    const t = w.totals || {}, pv = w.prev || {};
+    const ps = ["sales", "collections"].filter((k) => Number(pv[k]) > 0).map((k) => ((Number(t[k]) || 0) - Number(pv[k])) / Number(pv[k]) * 100);
+    const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0;
+    const lv = LV[lvOf(avg)];
+    return shareImage({
+      title: isWeek ? "التقرير الأسبوعي" : "التقرير الشهري", sub: label, file: (isWeek ? "week-" : "month-") + (w.prev_end || ""),
+      badge: ps.length ? { text: lv.t, num: signPct(avg), color: lv.c } : null,
+      hero: { label: "المبيعات", value: money(t.sales), color: "#E2580C", note: `${prevLabel}: ${money(pv.sales)}  ${pctTxt(t.sales, pv.sales)}`, noteColor: pctCol(t.sales, pv.sales) },
+      kpis: [
+        { l: "التحصيلات", v: money(t.collections), c: "#2E7D32", s: `${pctTxt(t.collections, pv.collections)} • قبلها ${money(pv.collections)}`, sc: pctCol(t.collections, pv.collections) },
+        { l: "المشتريات", v: money(t.purchases), s: `${pctTxt(t.purchases, pv.purchases)} • قبلها ${money(pv.purchases)}` },
+        { l: "فواتير البيع", v: String(t.sales_count || 0), s: `${t.customers || 0} عميل` },
+        { l: "سداد للموردين", v: money(t.supplier_payments), c: "#D9480F" },
+      ],
+      lists: [
+        { title: "أكبر العملاء", rows: (w.top_customers || []).slice(0, 5).map((c) => ({ l: c.name, s: `${c.invoices} فاتورة`, v: money(c.sales) })) },
+        { title: "أكتر الأصناف مبيعاً", rows: (w.top_items || []).slice(0, 5).map((i) => ({ l: i.name, s: `اتباع ${qty(i.qty)} ${i.unit || ""}`, v: money(i.value) })) },
+      ],
+    });
+  }
+  async function shareParty(p, key) {
+    let an = null;
+    try { an = (await call("party_analysis", { p_key: key }, { swr: true })).data; } catch (e) { /* */ }
+    const c = an && an.customer, bi = balInfo(p.balance);
+    const hs = c && (c.last_inv || c.balance) ? healthScore(c) : null;
+    const kpis = [];
+    if (c) {
+      kpis.push({ l: "مشترياته آخر 12 شهر", v: money(c.value_12), s: `${c.inv_12 || 0} فاتورة` });
+      kpis.push({ l: "آخر دفعة", v: c.last_pay ? fmtDate(c.last_pay) : "—", s: c.pay_status === "overdue" ? `متأخر — ما دفعش من ${c.oldest_days} يوم` : `المهلة ${c.grace_days} يوم`, sc: c.pay_status === "overdue" ? "#C62828" : "#2E7D32" });
+    }
+    const st = (p.statement || []).slice(0, 7);
+    return shareImage({
+      title: p.name, sub: [p.customer_code ? `كود عميل ${p.customer_code}` : "", p.supplier_code ? `كود مورد ${p.supplier_code}` : ""].filter(Boolean).join(" • ") || "كشف حساب",
+      file: "account-" + (p.customer_code || p.supplier_code || "x"),
+      badge: hs ? { text: `صحة العميل: ${hs.label}`, num: String(hs.sc), color: hs.color } : null,
+      hero: { label: bi.cls === "zero" ? "الحساب" : bi.label, value: bi.cls === "zero" ? "خالص" : bi.text, color: bi.cls === "owe" ? "#E2580C" : "#1E7FD8", note: p.last_date ? `آخر حركة ${fmtDate(p.last_date)}` : "" },
+      kpis,
+      lists: [{ title: "آخر الحركات", rows: st.map((m) => ({ l: `${m.kind || "حركة"}${m.ref ? " #" + m.ref : ""}`, s: fmtDate(m.d), v: m.debit > 0 ? "+" + money(m.debit) : "−" + money(m.credit), c: m.debit > 0 ? "#D9480F" : "#2E7D32" })) }],
+    });
+  }
+
   // ================= الرئيسية =================
   async function viewHome() {
+    const today = cairoToday();
+    const hr = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Africa/Cairo" }).format(new Date()));
+    const greet = hr < 12 ? "صباح الخير" : "مساء الخير";
+    const boss = isBoss();
     const main = shell({ title: "مخزن د/محمد سلامه" }, `
-      <div class="row between" style="margin:4px 4px 12px">
-        <div><div class="muted small">أهلاً</div><div style="font-weight:800;font-size:18px">${esc(state.me.name || "")}</div></div>
-        <span class="tag">${esc(ROLE[state.me.role] || "")}</span>
-      </div>
+      <section class="hero-card home-hero">
+        <div class="hh-top">
+          <div class="grow"><div class="lbl">${greet}، ${esc(state.me.name || "")}</div><div class="hh-date">${esc(dayName(today))}</div></div>
+          <button class="sync-pill" id="syncp" type="button"><i class="status-dot"></i><span>بنشوف آخر تحديث…</span></button>
+        </div>
+        ${boss ? `<div id="hhBody"><div class="hh-main"><div class="lbl">مبيعات النهارده</div><div class="big num">—</div></div></div>` : `<div class="hh-role"><span class="tag">${esc(ROLE[state.me.role] || "")}</span></div>`}
+      </section>
       <form class="search" id="qform" role="search">
         ${I.search}
         <input class="input" id="q" type="search" placeholder="ابحث عن عميل أو مورد أو صنف" autocomplete="off">
       </form>
       <div id="qres"></div>
-      <div id="sync"></div>
+      <div id="alerts"></div>
       <div id="install"></div>
       <div id="push"></div>
-      <div id="alerts"></div>
       <div id="today"></div>`);
     const qi = document.getElementById("q");
-    const homeBlocks = ["sync", "install", "push", "alerts", "today"].map((x) => document.getElementById(x));
+    const homeBlocks = ["alerts", "install", "push", "today"].map((x) => document.getElementById(x));
     let qt, qseq = 0;
     const qsearch = async () => {
       const v = qi.value.trim();
@@ -366,7 +611,7 @@
       const ps = pr.data || [], is = ir.data || [];
       if (pr.err && ir.err) { box.innerHTML = errBox(pr.err); return; }
       box.innerHTML = (!ps.length && !is.length) ? empty("مفيش نتايج") : `
-        ${ps.length ? `<div class="section-title"><span>العملاء والموردين</span><a class="small" href="#/parties" data-keep="${isBoss() ? "t-parties-q" : "q-parties"}">الكل</a></div><div class="list">${ps.map(partyRow).join("")}</div>` : ""}
+        ${ps.length ? `<div class="section-title"><span>العملاء والموردين</span><a class="small" href="#/parties" data-keep="${boss ? "t-parties-q" : "q-parties"}">الكل</a></div><div class="list">${ps.map(partyRow).join("")}</div>` : ""}
         ${is.length ? `<div class="section-title"><span>الأصناف</span><a class="small" href="#/items" data-keep="t-items-q">الكل</a></div><div class="list">${is.map(itemRow).join("")}</div>` : ""}`;
     };
     qi.oninput = () => { clearTimeout(qt); qt = setTimeout(qsearch, 300); };
@@ -377,47 +622,75 @@
     document.getElementById("qform").onsubmit = (e) => { e.preventDefault(); clearTimeout(qt); qsearch(); qi.blur(); };
 
     renderInstallCard();
-    if (isBoss()) renderPushCard(document.getElementById("push"));
+    if (boss) renderPushCard(document.getElementById("push"));
 
+    // حالة المزامنة: سطر صغير جوه اللوحة
     call("app_sync_status", {}, { swr: true }).then((r) => {
-      const s = r.data || {};
-      const mins = s.last_sync ? (Date.now() - new Date(s.last_sync).getTime()) / 60000 : 1e9;
+      const st = r.data || {};
+      const mins = st.last_sync ? (Date.now() - new Date(st.last_sync).getTime()) / 60000 : 1e9;
       const cls = mins <= 15 ? "ok" : mins <= 120 ? "warn" : "bad";
-      const el = document.getElementById("sync");
-      if (el) el.innerHTML = `
-        <div class="card row">
-          <span class="status-dot ${cls}"></span>
-          <div class="grow">
-            <div style="font-weight:700">آخر تحديث من جهاز الحسابات: ${esc(ago(s.last_sync))}</div>
-            ${cls === "bad" ? `<div class="small muted">ممكن جهاز الحسابات يكون مقفول أو النت فاصل عنده</div>` : ""}
-          </div>
-        </div>`;
+      const el = document.getElementById("syncp");
+      if (!el) return;
+      el.className = "sync-pill " + cls;
+      el.innerHTML = `<i class="status-dot ${cls}"></i><span>${cls === "ok" ? "محدّث" : "آخر تحديث"} ${esc(ago(st.last_sync))}</span>`;
+      el.onclick = () => toast(cls === "bad" ? "جهاز الحسابات ما بعتش بيانات من فترة — ممكن يكون مقفول أو النت فاصل عنده" : `آخر بيانات وصلت من جهاز الحسابات ${ago(st.last_sync)}`, 4000);
     }).catch(() => {});
 
-    if (isBoss()) {
-      call("alerts_list", {}, { swr: true }).then((r) => {
-        const a = r.data || {}, el = document.getElementById("alerts");
-        if (!el) return;
-        const parts = [
-          [a.overdue_customers, "عميل متأخر في السداد"], [a.below_safety, "صنف تحت الأمان"], [a.out_no_restock, "صنف خلص ومتجابش"],
-          [a.supplier_dues, "مورد مستحق له"], [a.season_soon, "عميل موسمه قرب"], [a.late_buyers, "عميل متأخر في الشراء"],
-        ].filter(([l]) => l && l.length);
-        if (!parts.length) { el.innerHTML = ""; return; }
-        el.innerHTML = `<a class="card row" href="#/alerts" style="color:inherit">
-          <div class="avatar" style="background:var(--danger-soft);color:var(--danger)">${hubIcon.bell}</div>
-          <div class="grow"><b>التنبيهات</b><div class="small muted">${parts.map(([l, t]) => `<span class="num">${l.length}</span> ${t}`).join(" • ")}</div></div>${I.chev}</a>`;
-      }).catch(() => {});
-      const today = cairoToday();
-      const el = document.getElementById("today");
-      el.innerHTML = `
-        <div class="section-title"><span>حركة النهارده — ${esc(dayName(today))}</span>
-          <a class="small" href="#/report/${addDays(today, -1)}">الأيام اللي فاتت</a></div>
-        <div id="todayBody">${loading}</div>`;
-      call("daily_report", { p_date: today }, { swr: true }).then((r) => {
-        const box = document.getElementById("todayBody");
-        if (box) box.innerHTML = reportBody(r, today, false);
-      }).catch((e) => { const box = document.getElementById("todayBody"); if (box) box.innerHTML = errBox(e); });
+    if (!boss) return;
+    call("alerts_list", {}, { swr: true }).then((r) => {
+      const a = r.data || {}, el = document.getElementById("alerts");
+      if (!el) return;
+      const parts = [
+        [a.overdue_customers, "متأخر سداد", "o"], [a.below_safety, "تحت الأمان", "o"], [a.out_no_restock, "خلص", "r"],
+        [a.supplier_dues, "مستحق لمورد", "b"], [a.late_buyers, "متأخر شراء", "g"], [a.season_soon, "موسمه قرب", "g"],
+      ].filter(([l]) => l && l.length);
+      if (!parts.length) { el.innerHTML = `<div class="alert-strip ok"><span class="as-ico">${hubIcon.bell}</span><div class="grow"><b>مفيش تنبيهات</b><div class="small muted">كل حاجة تمام دلوقتي</div></div></div>`; return; }
+      el.innerHTML = `<a class="alert-strip" href="#/alerts"><span class="as-ico">${hubIcon.bell}</span>
+        <div class="as-pills">${parts.map(([l, t, c]) => `<span class="ap ${c}"><b class="num">${l.length}</b>${t}</span>`).join("")}</div>${I.chev}</a>`;
+    }).catch(() => {});
+
+    const el = document.getElementById("today");
+    el.innerHTML = `
+      <div class="section-title"><span>تفاصيل النهارده</span><a class="small" href="#/report/${addDays(today, -1)}">الأيام اللي فاتت</a></div>
+      <div id="todayBody">${loading}</div>`;
+    const lastWeek = addDays(today, -7), yest = addDays(today, -1);
+    const [tr, lw, ys] = await Promise.all([
+      call("daily_report", { p_date: today }, { swr: true }).catch((e) => ({ err: e })),
+      call("daily_report", { p_date: lastWeek }, { swr: true }).catch(() => ({})),
+      call("daily_report", { p_date: yest }, { swr: true }).catch(() => ({})),
+    ]);
+    const box = document.getElementById("todayBody");
+    if (!box) return;
+    if (tr.err) { box.innerHTML = errBox(tr.err); return; }
+    box.innerHTML = reportBody(tr, today, false, { noHero: true });
+    const t = (tr.data && tr.data.totals) || {}, lt = (lw.data && lw.data.totals) || {}, yt = (ys.data && ys.data.totals) || {};
+    const custs = new Set(((tr.data && tr.data.sales) || []).map((x) => x.party)).size;
+    const hb = document.getElementById("hhBody");
+    if (!hb) return;
+    const wd = WEEKDAY(lastWeek);
+    if (!t.sales_count && !t.collections_count) {
+      hb.innerHTML = `<div class="hh-main"><div class="lbl">مبيعات النهارده</div><div class="hh-empty">لسه مافيش فواتير النهارده</div></div>
+        <div class="hh-stats">
+          <div><span>مبيعات امبارح</span><b class="num">${money(yt.sales)}</b></div>
+          <div><span>تحصيلات امبارح</span><b class="num">${money(yt.collections)}</b></div>
+          <div><span>${esc(wd)} اللي فات</span><b class="num">${money(lt.sales)}</b></div>
+        </div>`;
+      return;
     }
+    const ref = Number(lt.sales) || 0, pct = ref > 0 ? Math.round((Number(t.sales) || 0) / ref * 100) : null;
+    hb.innerHTML = `
+      <div class="hh-main">
+        <div class="lbl">مبيعات النهارده</div>
+        <div class="big num" data-count="${Math.round(Number(t.sales) || 0)}">${money(t.sales)}</div>
+        ${pct != null ? `<div class="hh-prog"><div class="bar"><i style="width:${Math.min(100, pct)}%"></i></div>
+          <span>${pct >= 100 ? `عدّينا ${esc(wd)} اللي فات (<b class="num">${pct}%</b>)` : `<b class="num">${pct}%</b> من مبيعات ${esc(wd)} اللي فات`} • <span class="num">${money(ref)}</span></span></div>` : ""}
+      </div>
+      <div class="hh-stats">
+        <div><span>التحصيلات</span><b class="num" data-count="${Math.round(Number(t.collections) || 0)}">${money(t.collections)}</b></div>
+        <div><span>فواتير</span><b class="num">${t.sales_count || 0}</b></div>
+        <div><span>عملاء</span><b class="num">${custs}</b></div>
+      </div>`;
+    countUp(hb);
   }
 
   // ================= العملاء والموردين =================
@@ -429,12 +702,12 @@
     const kind = p.is_customer && p.is_supplier ? "عميل ومورد" : p.is_supplier ? "مورد" : "عميل";
     const code = p.customer_code || p.supplier_code || "";
     return `<a class="list-item" href="#/party/${encodeURIComponent(p.key)}">
-      <div class="avatar">${esc(initial(p.name))}</div>
+      ${kindAvatar(p)}
       <div class="grow">
         <div class="title ellipsis">${esc(p.name)}</div>
         <div class="sub">${kind} • كود <span class="num">${esc(code)}</span>${p.last_date ? ` • آخر حركة ${fmtDate(p.last_date)}` : ""}</div>
       </div>
-      <div class="end">${balHtml(p.balance)}</div>
+      <div class="end">${balHtml(p.balance)}${p.spark ? sparkSvg(p.spark, Number(p.balance) > 0 ? "#F57C00" : "#1E7FD8") : ""}</div>
     </a>`;
   }
 
@@ -477,7 +750,7 @@
   }
 
   async function viewParty(key) {
-    const main = shell({ title: "كشف حساب", back: true }, loading);
+    const main = shell({ title: "كشف حساب", back: true, actions: shareBtn }, loadingHero);
     let r;
     try { r = await call("party_detail", { p_key: key }, { swr: true }); }
     catch (e) { main.innerHTML = errBox(e); return; }
@@ -491,7 +764,7 @@
       ${staleNote(r)}
       <div class="hero-card">
         <div class="lbl">${bi.cls === "zero" ? "الحساب" : bi.label}</div>
-        <div class="big num">${bi.cls === "zero" ? "خالص" : bi.text}</div>
+        <div class="big num ${bi.cls === "owe" ? "owe" : ""}">${bi.cls === "zero" ? "خالص" : bi.text}</div>
         <div class="meta">
           <span class="tag">${kind}</span>
           ${p.customer_code ? `<span>كود عميل <b class="num">${esc(p.customer_code)}</b></span>` : ""}
@@ -510,6 +783,7 @@
       <div class="list" id="stmt"></div>
       <div class="more" id="more"></div>`;
     renderPartyAnalysis(document.getElementById("pana"), key);
+    wireShare(() => shareParty(p, key));
     const PAGE = 60;
     let shown = 0;
     const stmt = document.getElementById("stmt");
@@ -542,7 +816,7 @@
 
 
   // ================= قوايم مرتبة (العملاء والموردين / الأصناف) =================
-  function rankAvatar(i) { return `<div class="avatar rank">${i + 1}</div>`; }
+  function rankAvatar(i) { return `<div class="avatar rank${i < 3 ? " top" : ""}">${i + 1}</div>`; }
 
   function tabbedList({ title, tabs, storeKey, placeholder, searchFn, searchRow, loadTab }) {
     let tab = sessionStorage.getItem(storeKey) || tabs[0][0];
@@ -588,7 +862,7 @@
       top: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">اتباع <b class="num">${qty(i.sold_365)}</b> ${esc(i.unit || "")} في سنة • آخر 3 شهور <span class="num">${qty(i.sold_90)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span></div></div>
-        <div class="end">${i.value_365 != null ? `<div class="bal num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>` : `<div class="bal num">${qty(i.sold_365)}</div><div class="bal-label">اتباع</div>`}</div></a>`,
+        <div class="end">${i.value_365 != null ? `<div class="bal num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>` : `<div class="bal num">${qty(i.sold_365)}</div><div class="bal-label">اتباع</div>`}${sparkSvg(monthVals(i.monthly))}</div></a>`,
       dead: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">رصيد <b class="num">${qty(i.stock)}</b> ${esc(i.unit || "")} • ${i.last_sale ? `آخر بيع ${fmtDate(i.last_sale)}` : "ما اتباعش خالص"}</div></div>
@@ -597,7 +871,7 @@
       turnover: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
-        <div class="end"><div class="bal credit num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div></div></a>`,
+        <div class="end"><div class="bal credit num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div>${sparkSvg(monthVals(i.monthly), "#2FB27A")}</div></a>`,
     };
     const notes = {
       top: "مترتبين من الأكثر مبيعاً للأقل (قيمة المبيعات آخر 12 شهر)",
@@ -622,7 +896,7 @@
   function viewParties() {
     if (!isBoss()) return viewPartiesSimple();
     const partyLine = (x, sub, amt, cls) => `<a class="list-item" href="#/party/${encodeURIComponent(x.key)}">
-      <div class="avatar">${esc(initial(x.name))}</div><div class="grow"><div class="title ellipsis">${esc(x.name)}</div><div class="sub">${sub}</div></div>
+      <div class="avatar ${cls === "owe" ? "k-late" : cls === "credit" ? "k-credit" : x.kind === "stopped" ? "k-stop" : "k-late"}">${cls === "owe" ? I.clock : cls === "credit" ? I.truck : x.kind === "stopped" ? I.pause : I.clock}</div><div class="grow"><div class="title ellipsis">${esc(x.name)}</div><div class="sub">${sub}</div></div>
       ${amt != null ? `<div class="end"><div class="bal ${cls || ""} num">${money(amt)}</div></div>` : ""}</a>`;
     const section = (title, list, row, note) => !list || !list.length ? "" : `
       <div class="section-title"><span>${title}</span><small>${list.length}</small></div>
@@ -650,8 +924,8 @@
         const quiet = [...(a.late_buyers || []).map((x) => ({ ...x, kind: "late" })),
                        ...stopped.map((c) => ({ key: c.key, name: c.name, days: c.days_since_inv, avg_gap: c.avg_gap, value_12: c.value_12, kind: "stopped" }))];
         const html = [
-          section("متأخرين في السداد", a.overdue_customers, (x) => partyLine(x, `أقدم فاتورة متدفعتش من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "owe"),
-                  "المبلغ على الشمال هو المتأخر بعد مهلة السداد"),
+          section("متأخرين في السداد", a.overdue_customers, (x) => partyLine(x, `ما دفعش من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "owe"),
+                  "عملاء عليهم فلوس وما دفعوش أي دفعة من حسابهم أكتر من مهلة السداد — والمبلغ هو رصيدهم كله"),
           section("مستحق للموردين", a.supplier_dues, (x) => partyLine(x, `أقدم فاتورة من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "credit")),
           section("بقالهم فترة ما اشتروش", quiet, (x) => partyLine(x,
             `${x.kind === "stopped" ? `<span class="tag red">وقف</span>` : `<span class="tag">متأخر عن عادته</span>`} آخر فاتورة من <span class="num">${x.days}</span> يوم${x.avg_gap ? ` • عادته كل <span class="num">${Math.round(x.avg_gap)}</span> يوم` : ""}`)),
@@ -663,7 +937,7 @@
 
   // ================= الفاتورة =================
   async function viewInvoice(type, no) {
-    const main = shell({ title: `${INV[type] || "فاتورة"} ${no}`, back: true }, loading);
+    const main = shell({ title: `${INV[type] || "فاتورة"} ${no}`, back: true }, loadingHero);
     let r;
     try { r = await call("invoice_detail", { p_type: type, p_no: no }, { swr: true }); }
     catch (e) { main.innerHTML = errBox(e); return; }
@@ -759,7 +1033,7 @@
   }
 
   async function viewItem(code) {
-    const main = shell({ title: "كارت صنف", back: true }, loading);
+    const main = shell({ title: "كارت صنف", back: true }, loadingHero);
     let days = Number(sessionStorage.getItem("item-days") || 365);
     let r;
     try { r = await call("item_card", { p_code: code, p_days: days }, { swr: true }); }
@@ -831,7 +1105,7 @@
     if (!isBoss()) { location.hash = "#/"; return; }
     date = date || cairoToday();
     const today = cairoToday();
-    const main = shell({ title: "التقرير اليومي", back: true }, `
+    const main = shell({ title: "التقرير اليومي", back: true, actions: shareBtn }, `
       <div class="date-nav">
         <button class="icon-btn" style="color:var(--accent)" id="prev" aria-label="اليوم اللي قبله">${I.back}</button>
         <input class="input" type="date" id="dt" value="${date}" max="${today}">
@@ -846,9 +1120,12 @@
     try { r = await call("daily_report", { p_date: date }, { swr: true }); }
     catch (e) { document.getElementById("rep").innerHTML = errBox(e); return; }
     document.getElementById("rep").innerHTML = reportBody(r, date, true);
+    countUp(document.getElementById("rep"));
+    wireShare(() => shareDaily(r.data || {}, date));
   }
 
-  function reportBody(r, date, withDay) {
+  function reportBody(r, date, withDay, opts) {
+    opts = opts || {};
     const d = r.data || {};
     const t = d.totals || {};
     const nothing = !t.sales_count && !t.purchases_count && !t.collections_count && !t.supplier_payments_count &&
@@ -858,11 +1135,11 @@
       ${staleNote(r)}
       ${withDay ? `<div class="muted center" style="margin:-4px 0 10px;font-weight:700">${esc(dayName(date))}</div>` : ""}
       <div class="kpis">
-        <div class="kpi hero">
+        ${opts.noHero ? `<div class="kpi"><div class="k-label">المبيعات</div><div class="k-value num">${money(t.sales)}</div><div class="k-sub">${t.sales_count || 0} فاتورة • آجل <span class="num">${money(t.sales_credit)}</span></div></div>` : `<div class="kpi hero">
           <div class="k-label">المبيعات</div>
-          <div class="k-value num">${money(t.sales)}</div>
+          <div class="k-value num" data-count="${Math.round(Number(t.sales) || 0)}">${money(t.sales)}</div>
           <div class="k-sub">${t.sales_count || 0} فاتورة • آجل <span class="num">${money(t.sales_credit)}</span> • نقدي <span class="num">${money(t.sales_cash)}</span></div>
-        </div>
+        </div>`}
         <div class="kpi"><div class="k-label">التحصيلات من العملاء</div><div class="k-value num plus">${money(t.collections)}</div><div class="k-sub">${t.collections_count || 0} سند</div></div>
         <div class="kpi"><div class="k-label">المشتريات</div><div class="k-value num">${money(t.purchases)}</div><div class="k-sub">${t.purchases_count || 0} فاتورة</div></div>
         <div class="kpi"><div class="k-label">سداد للموردين</div><div class="k-value num minus">${money(t.supplier_payments)}</div><div class="k-sub">${t.supplier_payments_count || 0} سند</div></div>
@@ -1402,6 +1679,342 @@
       </table></div>`;
   }
 
+  // ---------- رسم متحرك: حركة المبيعات والتحصيلات خلال الفترة مقارنة باللي قبلها ----------
+  // وش تعبيري بيتفاعل مع الحركة: مبسوط لو أحسن، زعلان لو أقل، عادي لو زي اللي فات
+  const motionPlayed = {};
+  const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  function cumulate(arr, k) { let s = 0; return arr.map((d) => (s += Number(d[k]) || 0)); }
+  // ميل ناعم من غير ما المنحنى يطلع لفوق أو ينزل غلط (monotone cubic)
+  function monoSlopes(ys) {
+    const n = ys.length, m = new Array(n).fill(0), d = [];
+    if (n < 2) return m;
+    for (let i = 0; i < n - 1; i++) d[i] = ys[i + 1] - ys[i];
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+      if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    return m;
+  }
+  function monoAt(ys, ms, f) {
+    if (!ys.length) return 0;
+    f = clamp(f, 0, ys.length - 1);
+    const i = Math.min(Math.floor(f), ys.length - 2);
+    if (i < 0) return ys[0];
+    const t = f - i, t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * ms[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * ms[i + 1];
+  }
+  // مستوى المزاج من نسبة التغيير
+  function moodOf(pct, hasPrev, hasCur) {
+    if (!hasPrev && !hasCur) return { lv: 0, m: 0 };
+    if (!hasPrev) return { lv: 2, m: 1 };
+    if (pct >= 25) return { lv: 2, m: 1 };
+    if (pct >= 5) return { lv: 1, m: 0.6 };
+    if (pct > -5) return { lv: 0, m: 0.32 };
+    if (pct > -25) return { lv: -1, m: -0.55 };
+    return { lv: -2, m: -1 };
+  }
+  // مؤشر الأداء (عداد) بدل الوشوش: درجات الأداء بألوان هادية
+  const LV = {
+    2: { t: "أداء ممتاز", c: "#2FB27A" }, 1: { t: "أداء جيد", c: "#7CC9A2" }, 0: { t: "أداء مستقر", c: "#AEBBCB" },
+    "-1": { t: "تراجع طفيف", c: "#F2A43A" }, "-2": { t: "تراجع ملحوظ", c: "#EF5B5B" },
+  };
+  const ZONES = [[-50, -25, -2], [-25, -5, -1], [-5, 5, 0], [5, 25, 1], [25, 50, 2]];
+  const lvOf = (pct) => (pct >= 25 ? 2 : pct >= 5 ? 1 : pct > -5 ? 0 : pct > -25 ? -1 : -2);
+  const signPct = (p) => `${p > 0.5 ? "+" : p < -0.5 ? "−" : ""}${Math.abs(Math.round(p))}%`;
+  const TREND = {
+    up: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    flat: '<path d="M4 12h15"/><path d="M15 8l4 4-4 4"/>',
+    down: '<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
+  };
+  const trendIcon = (lv) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${TREND[lv > 0 ? "up" : lv < 0 ? "down" : "flat"]}</svg>`;
+  // إيموجي صغير جنب الحكم (Fluent 3D من مايكروسوفت، رخصة MIT)
+  const EMO = { 2: "m2", 1: "m1", 0: "m0", "-1": "n1", "-2": "n2" };
+  // احتفال: أضواء ونجوم وقصاصات لما الأداء ممتاز، ولمعة خفيفة لما يكون جيد
+  function celebrate(hero, emo, big) {
+    const fx = hero.querySelector("[data-fx]");
+    if (!fx) return;
+    fx.innerHTML = "";
+    hero.classList.remove("shine"); void hero.offsetWidth; hero.classList.add("shine");
+    const hb = hero.getBoundingClientRect(), eb = emo.getBoundingClientRect();
+    const ex = eb.left - hb.left + eb.width / 2, ey = eb.top - hb.top + eb.height / 2;
+    const star = '<svg viewBox="0 0 24 24"><path d="M12 0c.6 6.2 5.8 11.4 12 12-6.2.6-11.4 5.8-12 12-.6-6.2-5.8-11.4-12-12C6.2 11.4 11.4.6 12 0z"/></svg>';
+    const nStars = big ? 9 : 4;
+    for (let i = 0; i < nStars; i++) {
+      const sp = document.createElement("span");
+      sp.className = "mo-spark";
+      const a = (Math.PI * 2 * i) / nStars + Math.random() * 0.5, d = 22 + Math.random() * (big ? 26 : 14);
+      sp.style.left = ex + Math.cos(a) * d + "px"; sp.style.top = ey + Math.sin(a) * d + "px";
+      sp.style.setProperty("--s", (0.5 + Math.random() * 0.8).toFixed(2));
+      sp.style.animationDelay = Math.round(Math.random() * 600) + "ms";
+      sp.innerHTML = star; fx.appendChild(sp);
+    }
+    if (big) {
+      const colors = ["#FFC93C", "#F57C00", "#2FB27A", "#6CB3F3", "#FFFFFF", "#FF8A65"];
+      for (let i = 0; i < 34; i++) {
+        const c = document.createElement("i");
+        c.className = "mo-conf";
+        c.style.left = Math.random() * hb.width + "px";
+        c.style.background = colors[i % colors.length];
+        c.style.setProperty("--dx", (Math.random() * 60 - 30).toFixed(0) + "px");
+        c.style.setProperty("--r", (Math.random() * 720 - 360).toFixed(0) + "deg");
+        c.style.setProperty("--h", hb.height + 20 + "px");
+        c.style.animationDuration = (1.6 + Math.random() * 1.2).toFixed(2) + "s";
+        c.style.animationDelay = Math.round(Math.random() * 500) + "ms";
+        if (i % 3 === 0) c.style.borderRadius = "50%";
+        fx.appendChild(c);
+      }
+    }
+    setTimeout(() => { if (fx.isConnected) fx.innerHTML = ""; hero.classList.remove("shine"); }, 3600);
+  }
+  function gaugeSvg() {
+    const cx = 120, cy = 112, r = 92;
+    const pt = (p, rr) => { const a = Math.PI * (1 - (clamp(p, -50, 50) + 50) / 100); return [cx + rr * Math.cos(a), cy - rr * Math.sin(a)]; };
+    const arc = (p1, p2, rr) => { const [x1, y1] = pt(p1, rr), [x2, y2] = pt(p2, rr); return `M${x1.toFixed(1)} ${y1.toFixed(1)} A${rr} ${rr} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`; };
+    const zones = ZONES.map(([a, b, lv]) => `<path class="g-zone" data-z="${lv}" d="${arc(a + 0.9, b - 0.9, r)}" stroke="${LV[lv].c}"/>`).join("");
+    let ticks = "";
+    for (let p = -50; p <= 50; p += 5) {
+      const major = p % 25 === 0, [x1, y1] = pt(p, r - 13), [x2, y2] = pt(p, r - (major ? 22 : 17));
+      ticks += `<line class="g-tick${major ? " major" : ""}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+    }
+    const lbl = (p, t) => { const [x, y] = pt(p, r - 34); return `<text class="g-lbl" x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle" direction="ltr">${t}</text>`; };
+    return `<svg class="gauge" viewBox="0 0 240 124" aria-hidden="true">
+      <path class="g-track" d="${arc(-50, 50, r)}"/>${zones}${ticks}
+      ${lbl(-25, "−25")}${lbl(0, "0")}${lbl(25, "+25")}
+      <text class="g-lbl" x="${(cx - r).toFixed(1)}" y="${cy + 15}" text-anchor="middle" direction="ltr">−50%</text>
+      <text class="g-lbl" x="${(cx + r).toFixed(1)}" y="${cy + 15}" text-anchor="middle" direction="ltr">+50%</text>
+      <g class="g-needle" data-needle style="transform-origin:${cx}px ${cy}px">
+        <path d="M${cx - 4} ${cy} L${cx - 0.8} ${cy - r + 16} L${cx + 0.8} ${cy - r + 16} L${cx + 4} ${cy} Z"/>
+      </g>
+      <circle class="g-hub" cx="${cx}" cy="${cy}" r="9"/><circle class="g-hub-in" cx="${cx}" cy="${cy}" r="3.5"/>
+    </svg>`;
+  }
+  function motionCard(id, periodWord, prevLabel, rangeLabel) {
+    const row = (k, label) => `
+      <div class="mo-row" data-k="${k}">
+        <div class="mo-top">
+          <div class="mo-figs">
+            <div class="mo-lbl"><i></i>${label}</div>
+            <div class="mo-val num" data-cur>0</div>
+            <div class="mo-prev">${esc(prevLabel)} <b class="num" data-prev>0</b></div>
+          </div>
+          <div class="mo-chip" data-chip><span class="mo-ico" data-ico></span><span class="mo-chip-t"><b data-pct></b><small data-diff></small></span></div>
+        </div>
+        <div class="mo-plot" data-plot><svg></svg><span class="mo-ph" data-ph></span></div>
+        <div class="mo-axis"><span data-a0></span><span data-a1></span></div>
+      </div>`;
+    return `<div class="card motion" id="${id}">
+      <div class="mo-hero"><span class="mo-fx" data-fx aria-hidden="true"></span>
+        <div class="mo-hero-t">
+          <div class="mo-kicker">حركة ${esc(periodWord)} • ${esc(rangeLabel)}</div>
+          <div class="mo-verdict" data-verdict><i></i><span>جاري المقارنة</span><img class="mo-emo" data-emo alt="" draggable="false"></div>
+          <div class="mo-vs">مقارنة ب${esc(prevLabel)}</div>
+          <div class="mo-sub" data-day>&nbsp;</div>
+        </div>
+        <div class="mo-gauge">${gaugeSvg()}<div class="mo-gread num" data-big>0%</div></div>
+      </div>
+      <div class="mo-body">
+        ${row("sales", "المبيعات")}${row("collections", "التحصيلات")}
+        <div class="mo-foot"><span class="mo-legend"><span><i class="lg cur"></i>${esc(periodWord)} ده</span><span><i class="lg prev"></i>${esc(prevLabel)}</span></span>
+          <button class="mo-replay" data-replay aria-label="شغّل تاني"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/></svg>شغّل تاني</button></div>
+      </div>
+    </div>`;
+  }
+
+  // cur/prev: [{d, sales, collections}] — totals: أرقام التقرير نفسها عشان النهاية تطابق جدول المقارنة
+  function wireMotion(el, o) {
+    if (!el) return;
+    const DUR = 7500, STAGGER = 450, H = 132, PT = 16, PB = 10;
+    const cur = o.cur || [], prev = o.prev || [];
+    const n = Math.max(cur.length, prev.length, 2);
+    const svgNS = "http://www.w3.org/2000/svg";
+    const word = o.periodWord;
+    const rows = [...el.querySelectorAll(".mo-row")].map((r) => {
+      const k = r.dataset.k;
+      const cc = cumulate(cur, k), pc = cumulate(prev, k);
+      const ct = Number(o.totals[k]) || 0, pt = Number(o.prevTotals[k]) || 0;
+      const pct = pt ? ((ct - pt) / pt) * 100 : 0;
+      return { r, k, cc, pc, cm: monoSlopes(cc), pm: monoSlopes(pc), ct, pt, pct, mood: moodOf(pct, pt > 0, ct > 0), t: 0,
+        plot: r.querySelector("[data-plot]"), ph: r.querySelector("[data-ph]"), chip: r.querySelector("[data-chip]"),
+        ico: r.querySelector("[data-ico]"), vCur: r.querySelector("[data-cur]"), vPrev: r.querySelector("[data-prev]") };
+    });
+    rows.forEach((R) => {
+      const a0 = R.r.querySelector("[data-a0]"), a1 = R.r.querySelector("[data-a1]");
+      a0.textContent = cur[0] ? shortDate(cur[0].d) : "";
+      a1.textContent = (cur.length > 1 || prev.length > 1) ? (cur[n - 1] ? shortDate(cur[n - 1].d) : "") : "";
+    });
+    const emoEl = el.querySelector("[data-emo]"), heroEl = el.querySelector(".mo-hero");
+    const needle = el.querySelector("[data-needle]"), bigNum = el.querySelector("[data-big]"), zonesEl = [...el.querySelectorAll(".g-zone")];
+    let gv = 0;                                   // مكان المؤشر دلوقتي (نسبة التغيير)
+    const setGauge = (v, num, lvForce) => {
+      gv = v;
+      needle.style.transform = `rotate(${(clamp(v, -50, 50) / 50 * 90).toFixed(2)}deg)`;
+      const lv = lvForce != null ? lvForce : lvOf(v);
+      zonesEl.forEach((z) => z.classList.toggle("on", z.dataset.z === String(lv)));
+      bigNum.textContent = signPct(num != null ? num : v);
+      return lv;
+    };
+    const dayEl = el.querySelector("[data-day]"), verdictEl = el.querySelector("[data-verdict]");
+    const totalPct = (() => {        // المزاج العام: المبيعات والتحصيلات بالنص
+      const p = rows.filter((R) => R.pt > 0).map((R) => R.pct);
+      return p.length ? p.reduce((a, b) => a + b, 0) / p.length : (rows.some((R) => R.ct > 0) ? 100 : 0);
+    })();
+    const overall = moodOf(totalPct, rows.some((R) => R.pt > 0), rows.some((R) => R.ct > 0));
+
+    function build(R) {
+      const W = Math.max(200, Math.round(R.plot.clientWidth || 300));
+      const xAt = (f) => W - 8 - (f / (n - 1)) * (W - 16);              // الوقت من اليمين للشمال
+      const max = Math.max(R.ct, R.pt, R.cc[R.cc.length - 1] || 0, R.pc[R.pc.length - 1] || 0, 1) * 1.08;
+      const yAt = (v) => H - PB - (v / max) * (H - PT - PB);
+      const pathOf = (ys, ms) => {
+        if (!ys.length) return "";
+        let d = `M${xAt(0).toFixed(1)} ${yAt(ys[0]).toFixed(1)}`;
+        for (let i = 0; i < ys.length - 1; i++) {
+          d += ` C${xAt(i + 1 / 3).toFixed(1)} ${yAt(ys[i] + ms[i] / 3).toFixed(1)} ${xAt(i + 2 / 3).toFixed(1)} ${yAt(ys[i + 1] - ms[i + 1] / 3).toFixed(1)} ${xAt(i + 1).toFixed(1)} ${yAt(ys[i + 1]).toFixed(1)}`;
+        }
+        return d;
+      };
+      const id = el.id + "-" + R.k;
+      const cl = pathOf(R.cc, R.cm), pl = pathOf(R.pc, R.pm);
+      const grid = [0.33, 0.66, 1].map((g) => `<line class="mo-grid" x1="0" x2="${W}" y1="${(H - PB - g * (H - PT - PB)).toFixed(1)}" y2="${(H - PB - g * (H - PT - PB)).toFixed(1)}"/>`).join("");
+      const ticks = Array.from({ length: n }, (_, i) => `<circle class="mo-tick" cx="${xAt(i).toFixed(1)}" cy="${H - PB}" r="1.6"/>`).join("");
+      const svg = R.plot.querySelector("svg");
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+      svg.innerHTML = `<defs>
+          <linearGradient id="${id}-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--c);stop-opacity:.32"/><stop offset="1" style="stop-color:var(--c);stop-opacity:0"/></linearGradient>
+          <clipPath id="${id}-c"><rect data-clip x="${W}" y="0" width="0" height="${H}"/></clipPath>
+          <clipPath id="${id}-pc"><rect data-pclip x="${W}" y="0" width="0" height="${H}"/></clipPath></defs>
+        ${grid}<line class="mo-baseline" x1="0" x2="${W}" y1="${H - PB}" y2="${H - PB}"/>${ticks}
+        <path class="mo-prevline" clip-path="url(#${id}-pc)" d="${pl}"/>
+        <g clip-path="url(#${id}-c)">
+          ${cl ? `<path d="${cl} L${xAt(R.cc.length - 1).toFixed(1)} ${H - PB} L${xAt(0).toFixed(1)} ${H - PB} Z" fill="url(#${id}-g)"/>` : ""}
+          <path class="mo-line-glow" d="${cl}"/><path class="mo-line" d="${cl}"/></g>
+        <line class="mo-playhead" data-phl x1="0" x2="0" y1="${PT - 6}" y2="${H - PB}"/>
+        ${R.pc.length ? `<circle class="mo-pdot" data-pdot r="4"/>` : ""}
+        <circle class="mo-halo" data-halo r="11"/><circle class="mo-dot" data-dot r="6"/>`;
+      R.W = W; R.xAt = xAt; R.yAt = yAt;
+      R.clip = svg.querySelector("[data-clip]"); R.pclip = svg.querySelector("[data-pclip]");
+      R.dot = svg.querySelector("[data-dot]"); R.halo = svg.querySelector("[data-halo]"); R.pdot = svg.querySelector("[data-pdot]"); R.phl = svg.querySelector("[data-phl]");
+    }
+    function draw(R, t) {
+      R.t = t = clamp(t, 0, 1);
+      const f = easeInOut(t) * (n - 1);
+      const fc = Math.min(f, Math.max(R.cc.length - 1, 0)), fp = Math.min(f, Math.max(R.pc.length - 1, 0));
+      const vc = R.cc.length ? monoAt(R.cc, R.cm, fc) : 0;
+      const vp = R.pc.length ? monoAt(R.pc, R.pm, fp) : R.pt * easeInOut(t);
+      const x = R.xAt(f), xc = R.xAt(fc);
+      R.clip.setAttribute("x", (xc - 2).toFixed(1)); R.clip.setAttribute("width", (R.W - xc + 4).toFixed(1));
+      R.pclip.setAttribute("x", (R.xAt(fp) - 2).toFixed(1)); R.pclip.setAttribute("width", (R.W - R.xAt(fp) + 4).toFixed(1));
+      R.dot.setAttribute("cx", xc.toFixed(1)); R.dot.setAttribute("cy", R.yAt(vc).toFixed(1));
+      R.halo.setAttribute("cx", xc.toFixed(1)); R.halo.setAttribute("cy", R.yAt(vc).toFixed(1));
+      if (R.pdot) { R.pdot.setAttribute("cx", R.xAt(fp).toFixed(1)); R.pdot.setAttribute("cy", R.yAt(vp).toFixed(1)); }
+      R.phl.setAttribute("x1", x.toFixed(1)); R.phl.setAttribute("x2", x.toFixed(1));
+      const done = t >= 1;
+      R.phl.style.opacity = done || t <= 0 ? 0 : 1;
+      const i = Math.min(Math.round(f), n - 1), c = cur[i];
+      R.ph.textContent = c ? shortDate(c.d) : "";
+      const hw = (R.ph.offsetWidth || 60) / 2;          // العلامة ماتطلعش برة الرسم
+      R.ph.style.left = clamp(x, hw, R.W - hw).toFixed(1) + "px";
+      R.ph.style.opacity = done || t <= 0 ? 0 : 1;
+      R.vCur.textContent = money(done ? R.ct : vc);
+      R.vPrev.textContent = money(done ? R.pt : vp);
+      R.plot.classList.toggle("live", !done && t > 0);
+      return { f, vc, vp };
+    }
+    function chip(R, show) {
+      const d = R.ct - R.pt, up = d > 0;
+      R.chip.className = "mo-chip lv" + R.mood.lv + (show ? " show" : "");
+      R.chip.querySelector("[data-pct]").innerHTML = !R.pt && !R.ct ? "مفيش حركة" : !R.pt ? "جديد" : Math.abs(R.pct) < 0.5 ? "زي اللي فات"
+        : `${up ? "▲" : "▼"} <span class="num">${Math.abs(Math.round(R.pct))}%</span>`;
+      R.chip.querySelector("[data-diff]").innerHTML = R.pt && d ? `${up ? "زيادة" : "نقص"} <span class="num">${money(Math.abs(d))}</span>` : "";
+      R.ico.innerHTML = trendIcon(R.mood.lv);
+    }
+    const setVerdict = (txt, color) => {
+      verdictEl.querySelector("span").textContent = txt;
+      verdictEl.querySelector("i").style.background = color || "transparent";
+    };
+    function finale(animate) {
+      const none = rows.every((R) => !R.ct && !R.pt);
+      setVerdict(none ? "مفيش حركة" : LV[overall.lv].t, none ? "" : LV[overall.lv].c);
+      verdictEl.classList.remove("in"); void verdictEl.offsetWidth; verdictEl.classList.add("in");
+      if (!none) { emoEl.src = `emoji/${EMO[overall.lv]}.webp`; emoEl.classList.add("on"); emoEl.dataset.lv = overall.lv; }
+      if (animate && !none && overall.lv >= 1) setTimeout(() => celebrate(heroEl, emoEl, overall.lv >= 2), 650);
+      dayEl.innerHTML = rows.filter((R) => R.pt || R.ct).map((R) => `<div class="mo-m"><span>${R.k === "sales" ? "المبيعات" : "التحصيلات"}</span>
+        <b class="num" style="color:${LV[R.mood.lv].c}">${!R.pt ? "جديد" : signPct(R.pct)}</b></div>`).join("") || esc(o.doneText || "");
+      el.classList.add("done");
+      bigNum.style.color = LV[overall.lv].c;
+      const target = none ? 0 : totalPct;
+      if (!animate) { setGauge(target, target, overall.lv); return; }
+      // المؤشر بيستقر بحركة سوستة هادية
+      const from = gv, s0 = performance.now();
+      const spring = (now) => {
+        if (!document.body.contains(el)) return;
+        const t = (now - s0) / 1000;
+        const v = target + (from - target) * Math.exp(-4.2 * t) * Math.cos(9 * t);
+        const num = from + (target - from) * easeInOut(Math.min(1, t / 0.9));
+        setGauge(v, num, overall.lv);
+        if (t < 1.6) requestAnimationFrame(spring); else setGauge(target, target, overall.lv);
+      };
+      requestAnimationFrame(spring);
+    }
+    let raf = 0;
+    function reset() {
+      rows.forEach((R) => { draw(R, 0); chip(R, false); });
+      setVerdict("جاري المقارنة", ""); verdictEl.classList.remove("in");
+      emoEl.classList.remove("on"); heroEl.classList.remove("shine"); const fx = heroEl.querySelector("[data-fx]"); if (fx) fx.innerHTML = "";
+      el.classList.remove("done"); bigNum.style.color = "";
+      setGauge(0, 0);
+      dayEl.innerHTML = "&nbsp;";
+    }
+    function play() {
+      cancelAnimationFrame(raf);
+      motionPlayed[o.key] = Date.now();
+      reset();
+      const t0 = performance.now();
+      let fin = false;
+      const step = (now) => {
+        if (!document.body.contains(el)) return;
+        let all = true, lead = null, sumP = 0, cntP = 0;
+        rows.forEach((R, idx) => {
+          const t = (now - t0 - idx * STAGGER) / DUR;
+          const s = draw(R, t);
+          if (idx === 0) lead = s;
+          if (t >= 1) { if (!R.chip.classList.contains("show")) chip(R, true); } else all = false;
+          if (R.pt > 0 && t > 0) { sumP += ((s.vc - s.vp) / Math.max(s.vp, R.pt * 0.15)) * 100; cntP++; }
+        });
+        // المؤشر بيتحرك مع الأيام: سابقين ولا متأخرين عن نفس النقطة في الفترة اللي فاتت
+        if (cntP) setGauge(gv + (sumP / cntP - gv) * 0.05);
+        if (lead) {
+          const i = Math.min(Math.round(lead.f), n - 1), c = cur[i];
+          dayEl.innerHTML = `<div class="mo-m"><span>${c ? esc(WEEKDAY(c.d) + " " + shortDate(c.d)) : ""}</span><b class="num">${i + 1}/${n}</b></div>`;
+        }
+        if (all) { if (!fin) { fin = true; finale(true); } return; }
+        raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    }
+    function finalState() { rows.forEach((R) => { draw(R, 1); chip(R, true); }); finale(false); }
+    rows.forEach(build);
+    el.querySelector("[data-replay]").onclick = play;
+    el.querySelectorAll(".mo-plot").forEach((p) => (p.onclick = play));
+    el.querySelector(".mo-gauge").onclick = play;
+    let rz = 0;
+    const onResize = () => { if (!document.body.contains(el)) { removeEventListener("resize", onResize); return; }
+      clearTimeout(rz); rz = setTimeout(() => rows.forEach((R) => { const t = R.t; build(R); draw(R, t); }), 120); };
+    addEventListener("resize", onResize);
+    const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const recently = motionPlayed[o.key] && Date.now() - motionPlayed[o.key] < 60000;
+    if (reduce || recently || !("IntersectionObserver" in window)) { finalState(); return; }
+    reset();
+    const io = new IntersectionObserver((ents) => {
+      if (ents.some((e) => e.isIntersecting)) { io.disconnect(); setTimeout(play, 300); }
+    }, { threshold: 0.3 });
+    io.observe(el);
+  }
+
   async function viewPeriod(kind, key) {
     if (!isBoss()) { location.hash = "#/"; return; }
     const today = cairoToday();
@@ -1410,7 +2023,7 @@
     const ym = isWeek ? null : (key || today).slice(0, 7);
     const label = isWeek ? `${shortDate(addDays(end, -6))} – ${shortDate(end)}` : monthLong(ym);
     const canNext = isWeek ? end < today : ym < today.slice(0, 7);
-    const main = shell({ title: isWeek ? "التقرير الأسبوعي" : "التقرير الشهري", back: true }, `
+    const main = shell({ title: isWeek ? "التقرير الأسبوعي" : "التقرير الشهري", back: true, actions: shareBtn }, `
       <div class="date-nav">
         <button class="icon-btn" style="color:var(--accent)" id="prev" aria-label="اللي قبله">${I.back}</button>
         <div class="input center" style="display:grid;place-items:center;font-weight:700">${esc(label)}</div>
@@ -1434,9 +2047,10 @@
     box.innerHTML = `
       ${staleNote(r)}
       <div class="muted center small" style="margin:-4px 0 10px">${inProgress ? periodWord + " ده لحد دلوقتي • " : ""}مقارنة بـ ${esc(shortDate(w.prev_start))} – ${esc(shortDate(w.prev_end))}${inProgress && !isWeek ? " (نفس عدد الأيام)" : ""}</div>
+      ${motionCard("mo-" + kind, periodWord, prevLabel, label)}
       ${compareCard(t, pv, curLabel, prevLabel)}
       <div class="kpis">
-        <div class="kpi hero"><div class="k-label">مبيعات ${periodWord}</div><div class="k-value num">${money(t.sales)}</div>
+        <div class="kpi hero"><div class="k-label">مبيعات ${periodWord}</div><div class="k-value num" data-count="${Math.round(Number(t.sales) || 0)}">${money(t.sales)}</div>
           <div class="k-sub">${t.sales_count || 0} فاتورة • ${t.customers || 0} عميل • ${esc(prevLabel)} <span class="num">${money(pv.sales)}</span> ${change(t.sales, pv.sales)}</div></div>
         ${kpi("التحصيلات", "collections", "plus", `• ${t.collections_count || 0} سند`)}
         ${kpi("المشتريات", "purchases", "", `• ${t.purchases_count || 0} فاتورة`)}
@@ -1482,7 +2096,7 @@
       </div>
       ${(cu.top_overdue || []).length ? `<div class="section-title"><span>أكبر المتأخرين في السداد</span></div>
         <div class="list">${cu.top_overdue.map((c) => `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}"><div class="grow"><div class="title ellipsis">${esc(c.name)}</div>
-          <div class="sub">أقدم فاتورة من <span class="num">${c.days}</span> يوم</div></div><div class="end"><div class="bal owe num">${money(c.amount)}</div></div></a>`).join("")}</div>` : ""}
+          <div class="sub">ما دفعش من <span class="num">${c.days}</span> يوم</div></div><div class="end"><div class="bal owe num">${money(c.amount)}</div></div></a>`).join("")}</div>` : ""}
       ${(cu.top_stopped || []).length ? `<div class="section-title"><span>أكبر العملاء اللي وقفوا</span></div>
         <div class="list">${cu.top_stopped.map((c) => `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}"><div class="grow"><div class="title ellipsis">${esc(c.name)}</div>
           <div class="sub">آخر فاتورة من <span class="num">${c.days}</span> يوم</div></div><div class="end"><div class="bal num">${money(c.value_12)}</div><div class="bal-label">مشتريات سنة</div></div></a>`).join("")}</div>` : ""}
@@ -1497,6 +2111,14 @@
       ${sd.count ? `<a class="card row" href="#/alerts" style="color:inherit"><div class="grow"><b>مستحق للموردين بعد المهلة</b><div class="small muted">${sd.count} مورد</div></div><div class="bal num">${money(sd.amount)}</div></a>` : ""}
       <div class="muted small center" style="margin:12px 0">آخر تحديث من جهاز الحسابات ${esc(ago(w.last_sync))}</div>`;
     wireCharts(box, "ج");
+    countUp(box);
+    wireShare(() => sharePeriod(w, isWeek, label, prevLabel));
+    const curDays = (w.daily || []).filter((d) => d.d <= today);
+    wireMotion(document.getElementById("mo-" + kind), {
+      key: kind + ":" + (isWeek ? end : ym), cur: curDays, prev: w.prev_daily || [],
+      totals: t, prevTotals: pv, periodWord, prevWord: prevLabel,
+      doneText: (inProgress ? periodWord + " ده لحد النهارده" : periodWord + " كله") + " • دوس على الرسم يتعاد",
+    });
   }
 
   // ---------- تحليل المخزن ----------
@@ -1566,8 +2188,8 @@
   function custRow(c, filter) {
     let sub = [], right = "";
     if (c.pay_status === "overdue" && (filter === "overdue" || filter === "all")) {
-      sub.push(`متأخر <span class="num">${c.oldest_days}</span> يوم (المهلة ${c.grace_days})`);
-      right = `<div class="bal owe num">${money(c.overdue_amount)}</div><div class="bal-label">متأخر</div>`;
+      sub.push(`ما دفعش من <span class="num">${c.oldest_days}</span> يوم${c.last_pay ? ` (آخر دفعة ${fmtDate(c.last_pay)})` : ""}`);
+      right = `<div class="bal owe num">${money(c.overdue_amount)}</div><div class="bal-label">عليه</div>`;
     }
     if (c.last_inv) sub.push(`آخر فاتورة من <span class="num">${c.days_since_inv}</span> يوم`);
     if (c.avg_gap && (filter === "late" || filter === "stopped")) sub.push(`عادته كل <span class="num">${Math.round(c.avg_gap)}</span> يوم`);
@@ -1647,7 +2269,7 @@
     const partyLink = (x, line, amt, cls) => `<a class="list-item" href="#/party/${encodeURIComponent(x.key)}"><div class="grow"><div class="title ellipsis">${esc(x.name)}</div><div class="sub">${line}</div></div>${amt != null ? `<div class="end"><div class="bal ${cls || ""} num">${money(amt)}</div></div>` : ""}</a>`;
     const itemLink = (x, line, right) => `<a class="list-item" href="#/item/${encodeURIComponent(x.code)}"><div class="grow"><div class="title ellipsis">${esc(x.name)}</div><div class="sub">${line}</div></div>${right ? `<div class="end">${right}</div>` : ""}</a>`;
     const html = [
-      sec("عملاء متأخرين في السداد", a.overdue_customers, (x) => partyLink(x, `أقدم فاتورة من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم • الرصيد <span class="num">${money(x.balance)}</span>`, x.amount, "owe")),
+      sec("عملاء متأخرين في السداد", a.overdue_customers, (x) => partyLink(x, `ما دفعش من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "owe")),
       sec("مستحق للموردين", a.supplier_dues, (x) => partyLink(x, `أقدم فاتورة من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "credit")),
       sec("أصناف تحت مخزون الأمان", a.below_safety, (x) => itemLink(x, `${tagAbc(x.abc)} رصيد <span class="num">${qty(x.stock)}</span> • الأمان <span class="num">${qty(x.safety)}</span>`, x.suggest ? `<div class="bal owe num">${qty(x.suggest)}</div><div class="bal-label">اطلب</div>` : "")),
       sec("أصناف خلصت ومتجابتش", a.out_no_restock, (x) => itemLink(x, `${tagAbc(x.abc)} خلصان ${daysTxt(x.days)}${x.stock < 0 ? ` • رصيد سالب <span class="num">${qty(x.stock)}</span>` : ""}`, x.suggest ? `<div class="bal owe num">${qty(x.suggest)}</div><div class="bal-label">اطلب</div>` : "")),
@@ -1678,6 +2300,8 @@
     const a = r.data;
     if (!a || !document.body.contains(el)) { el.innerHTML = ""; return; }
     const pts = (a.monthly || []).map((m) => ({ m: m.m, v: m.sold }));
+    const quiet = !(Number(a.avg_month) > 0) && !(Number(a.sold_90) > 0);       // صنف مش بيتحرك
+    const sinceSale = a.last_sale ? Math.round((Date.parse(cairoToday()) - Date.parse(String(a.last_sale).slice(0, 10))) / 864e5) : null;
     const row = (label, val, auto) => `<div class="kv"><span>${label}</span><b class="num">${val}</b>${auto != null ? `<small class="muted">(التلقائي <span class="num">${auto}</span>)</small>` : ""}</div>`;
     const locked = a.locked;
     el.innerHTML = `
@@ -1688,21 +2312,22 @@
           ${locked ? `<span class="tag">🔒 قيم يدوية</span>` : ""} ${a.excluded ? `<span class="tag gray">مستبعد من التنبيهات</span>` : ""}
         </div>
         ${a.suggest_qty > 0 ? `<div class="card soft" style="margin:0"><b>محتاج تطلب حوالي <span class="num">${qty(a.suggest_qty)}</span> ${esc(a.unit || "")}</b><div class="small">عشان توصل للحد الأقصى (<span class="num">${qty(a.max_stock)}</span>)</div></div>` : ""}
-        <div class="kpis" style="margin:0">
+        ${quiet ? `<div class="quiet-note">${I.pause}<div><b>صنف مش بيتحرك</b><div class="small">${a.last_sale ? `آخر بيع ${fmtDate(a.last_sale)} (من <span class="num">${sinceSale}</span> يوم)` : "ما اتباعش خالص في آخر سنة"}${Number(a.stock) > 0 ? ` • عليه رصيد <span class="num">${qty(a.stock)}</span> ${esc(a.unit || "")}` : ""}</div></div></div>` : ""}
+        <div class="kpis" style="margin:0" ${quiet ? "hidden" : ""}>
           <div class="kpi"><div class="k-label">متوسط البيع في الشهر</div><div class="k-value num">${qty(a.avg_month)}</div><div class="k-sub">آخر 3 شهور: <span class="num">${qty(a.sold_90)}</span></div></div>
           <div class="kpi"><div class="k-label">الرصيد يكفي</div><div class="k-value num">${a.days_cover != null ? qty(a.days_cover) : "—"}</div><div class="k-sub">يوم بمعدل البيع الحالي</div></div>
           <div class="kpi"><div class="k-label">معدل الدوران (12 شهر)</div><div class="k-value num">${turnTxt(a.turnover_365)}</div><div class="k-sub">مرة في السنة</div></div>
           <div class="kpi"><div class="k-label">معدل الدوران (3 شهور)</div><div class="k-value num">${turnTxt(a.turnover_90)}</div><div class="k-sub">بمعدل سنوي</div></div>
         </div>
         <div class="kvs">
-          ${row("مخزون الأمان", qty(a.safety_stock), locked && a.safety_stock !== a.auto_safety_stock ? qty(a.auto_safety_stock) : null)}
-          ${row("نقطة إعادة الطلب", qty(a.reorder_point), locked && a.reorder_point !== a.auto_reorder_point ? qty(a.auto_reorder_point) : null)}
-          ${row("الحد الأقصى", qty(a.max_stock), locked && a.max_stock !== a.auto_max_stock ? qty(a.auto_max_stock) : null)}
+          ${quiet && !locked && !(a.safety_stock > 0) ? "" : row("مخزون الأمان", qty(a.safety_stock), locked && a.safety_stock !== a.auto_safety_stock ? qty(a.auto_safety_stock) : null)}
+          ${quiet && !locked && !(a.reorder_point > 0) ? "" : row("نقطة إعادة الطلب", qty(a.reorder_point), locked && a.reorder_point !== a.auto_reorder_point ? qty(a.auto_reorder_point) : null)}
+          ${quiet && !locked && !(a.max_stock > 0) ? "" : row("الحد الأقصى", qty(a.max_stock), locked && a.max_stock !== a.auto_max_stock ? qty(a.auto_max_stock) : null)}
           ${row("مدة التوريد", qty(a.lead_days) + " يوم")}
           ${row("أيام الرصيد صفر (آخر سنة)", qty(a.zero_days_365) + " يوم")}
           ${a.last_purchase ? row("آخر شراء", fmtDate(a.last_purchase)) : ""}
         </div>
-        ${barChart(pts, "المبيعات آخر 12 شهر", a.unit || "")}
+        ${pts.some((x) => Number(x.v) > 0) ? barChart(pts, "المبيعات آخر 12 شهر", a.unit || "") : ""}
         ${a.override_note ? `<div class="small muted">ملاحظة: ${esc(a.override_note)}</div>` : ""}
         ${isBoss() ? `<button class="btn ghost" id="ovr">تعديل يدوي وقفل</button><div id="ovrf"></div>` : ""}
         <div class="small muted">آخر حساب ${esc(ago(a.computed_at))}</div>
@@ -1756,12 +2381,14 @@
     if (c && (c.last_inv || c.balance)) {
       const pts = (c.monthly || []).map((m) => ({ m: m.m, v: m.v }));
       const payLine = c.pay_status === "overdue"
-        ? `<div class="card soft" style="margin:0;background:var(--danger-soft);border-color:transparent;color:var(--danger)"><b>متأخر في السداد: <span class="num">${money(c.overdue_amount)}</span></b><div class="small">أقدم فاتورة متدفعتش من <span class="num">${c.oldest_days}</span> يوم • المهلة ${c.grace_days} يوم</div></div>`
-        : c.balance > 0 ? `<div class="small" style="color:var(--success);font-weight:700">ملتزم في السداد (المهلة ${c.grace_days} يوم)</div>` : "";
+        ? `<div class="card soft" style="margin:0;background:var(--danger-soft);border-color:transparent;color:var(--danger)"><b>متأخر في السداد — عليه <span class="num">${money(c.overdue_amount)}</span></b><div class="small">ما دفعش أي دفعة من <span class="num">${c.oldest_days}</span> يوم${c.last_pay ? ` (آخر دفعة ${fmtDate(c.last_pay)})` : ""} • المهلة ${c.grace_days} يوم</div></div>`
+        : c.balance > 0 ? `<div class="small" style="color:var(--success);font-weight:700">ملتزم في السداد${c.last_pay ? ` — آخر دفعة ${fmtDate(c.last_pay)}` : ""} (المهلة ${c.grace_days} يوم)</div>` : "";
       const buyLine = c.buy_status === "stopped" ? `<span class="tag red">متوقف عن الشراء</span>` : c.buy_status === "late" ? `<span class="tag">متأخر في الشراء</span>` : "";
+      const hs = healthScore(c);
       html += `
         <div class="section-title"><span>تحليل العميل</span><small>${tagAbc(c.abc)}</small></div>
         <div class="card stack">
+          ${healthHtml(hs)}
           <div class="row" style="flex-wrap:wrap;gap:6px">
             ${c.pattern ? `<span class="tag gray">${esc(PATTERN[c.pattern] || c.pattern)}</span>` : ""} ${buyLine}
             ${c.locked ? `<span class="tag">🔒 قيم يدوية</span>` : ""} ${c.excluded ? `<span class="tag gray">مستبعد من التنبيهات</span>` : ""}
@@ -1793,6 +2420,35 @@
     wireCharts(el, "ج");
     const b = el.querySelector("#covr");
     if (b) b.onclick = () => { b.hidden = true; partyOverrideForm(el.querySelector("#covrf"), c, s, () => renderPartyAnalysis(el, key)); };
+  }
+
+  // صحة العميل من 100: الالتزام في السداد + انتظام الشراء + حجم التعامل
+  function healthScore(c) {
+    let sc = 100; const why = [];
+    if (c.pay_status === "overdue") {
+      const late = Math.max(0, (Number(c.oldest_days) || 0) - (Number(c.grace_days) || 0));
+      const d = Math.round(20 + Math.min(25, late / 3)); sc -= d; why.push(["-", `متأخر في السداد (${c.oldest_days} يوم من غير دفع)`]);
+    } else if (Number(c.balance) > 0) why.push(["+", "ملتزم في السداد"]);
+    else why.push(["+", "مفيش عليه فلوس"]);
+    if (c.buy_status === "stopped") { sc -= 30; why.push(["-", "وقف شراء"]); }
+    else if (c.buy_status === "late") { sc -= 15; why.push(["-", "متأخر عن عادته في الشراء"]); }
+    else if (Number(c.inv_12) > 0) why.push(["+", c.avg_gap ? `بيشتري بانتظام (كل ${Math.round(c.avg_gap)} يوم)` : "بيشتري"]);
+    if (!(Number(c.inv_12) > 0)) { sc -= 20; why.push(["-", "ما اشتراش في آخر سنة"]); }
+    if (c.abc === "A") why.push(["+", "من أكبر العملاء (فئة A)"]);
+    else if (c.abc === "B") sc -= 5;
+    else if (c.abc === "C") { sc -= 10; why.push(["-", "تعامله صغير (فئة C)"]); }
+    sc = Math.max(0, Math.min(100, Math.round(sc)));
+    const lv = sc >= 80 ? ["ممتاز", "#2FB27A"] : sc >= 60 ? ["جيد", "#7CC9A2"] : sc >= 40 ? ["متوسط", "#F2A43A"] : ["ضعيف", "#EF5B5B"];
+    return { sc, label: lv[0], color: lv[1], why };
+  }
+  function healthHtml(h) {
+    const R = 26, C = 2 * Math.PI * R, off = C * (1 - h.sc / 100);
+    return `<div class="health">
+      <svg viewBox="0 0 64 64" class="h-ring"><circle cx="32" cy="32" r="${R}" class="h-tr"/><circle cx="32" cy="32" r="${R}" class="h-v" style="stroke:${h.color};stroke-dasharray:${C.toFixed(1)};stroke-dashoffset:${off.toFixed(1)}"/>
+        <text x="32" y="37" text-anchor="middle" direction="ltr">${h.sc}</text></svg>
+      <div class="grow"><div class="h-t">صحة العميل: <b style="color:${h.color}">${h.label}</b></div>
+        <ul class="h-why">${h.why.slice(0, 4).map(([k, t]) => `<li class="${k === "+" ? "p" : "m"}">${esc(t)}</li>`).join("")}</ul></div>
+    </div>`;
   }
 
   function partyOverrideForm(box, c, s, done) {
@@ -1842,7 +2498,7 @@
 
   // ---------- إعدادات التحليل (للمدير) ----------
   const SETTINGS = [
-    ["default_pay_grace_days", "مهلة السداد الافتراضية (يوم)", "العميل يعتبر متأخر لو فاتورته عدت المدة دي ومتدفعتش"],
+    ["default_pay_grace_days", "مهلة السداد الافتراضية (يوم)", "العميل يعتبر متأخر لو عليه فلوس وعدت المدة دي من غير ما يدفع أي دفعة من حسابه"],
     ["lead_time_days", "مدة التوريد (يوم)", "من وقت ما تطلب البضاعة لحد ما توصل المخزن"],
     ["order_cycle_days", "الطلبية تكفي كام يوم", "بتحدد الحد الأقصى للمخزون"],
     ["service_z", "معامل الأمان", "1.65 يغطي 95% من تقلبات البيع — كل ما يزيد يزيد مخزون الأمان"],
@@ -1928,6 +2584,7 @@
       const m = h.match(re);
       if (m) {
         if (keepScroll !== true) window.scrollTo(0, 0);
+        state.quiet = keepScroll === true;
         fn(...m.slice(1).map((x) => (x == null ? x : decodeURIComponent(x))));
         return;
       }
