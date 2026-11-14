@@ -224,7 +224,7 @@
     const h = location.hash;
     if (h.startsWith("#/part")) return "parties";
     if (h.startsWith("#/item")) return "items";
-    if (/^#\/(report|stock|customers|alerts|settings)/.test(h)) return "report";
+    if (/^#\/(report|week|month|stock|customers|alerts|settings)/.test(h)) return "report";
     if (h.startsWith("#/me") || h.startsWith("#/user")) return "me";
     if (h.startsWith("#/invoice")) return "";
     return "home";
@@ -366,8 +366,8 @@
       const ps = pr.data || [], is = ir.data || [];
       if (pr.err && ir.err) { box.innerHTML = errBox(pr.err); return; }
       box.innerHTML = (!ps.length && !is.length) ? empty("مفيش نتايج") : `
-        ${ps.length ? `<div class="section-title"><span>العملاء والموردين</span><a class="small" href="#/parties" data-keep="q-parties">الكل</a></div><div class="list">${ps.map(partyRow).join("")}</div>` : ""}
-        ${is.length ? `<div class="section-title"><span>الأصناف</span><a class="small" href="#/items" data-keep="q-items">الكل</a></div><div class="list">${is.map(itemRow).join("")}</div>` : ""}`;
+        ${ps.length ? `<div class="section-title"><span>العملاء والموردين</span><a class="small" href="#/parties" data-keep="${isBoss() ? "t-parties-q" : "q-parties"}">الكل</a></div><div class="list">${ps.map(partyRow).join("")}</div>` : ""}
+        ${is.length ? `<div class="section-title"><span>الأصناف</span><a class="small" href="#/items" data-keep="t-items-q">الكل</a></div><div class="list">${is.map(itemRow).join("")}</div>` : ""}`;
     };
     qi.oninput = () => { clearTimeout(qt); qt = setTimeout(qsearch, 300); };
     document.getElementById("qres").onclick = (e) => {
@@ -438,7 +438,7 @@
     </a>`;
   }
 
-  function viewParties() {
+  function viewPartiesSimple() {
     const filters = [["all", "الكل"], ["owe", "عليهم فلوس"], ["credit", "ليهم فلوس"], ["c", "عملاء"], ["s", "موردين"]];
     let filter = sessionStorage.getItem("f-parties") || "all";
     const main = shell({ title: "العملاء والموردين" }, `
@@ -540,6 +540,127 @@
     return type ? `<a class="mv" href="#/invoice/${type}/${encodeURIComponent(m.ref)}">${inner}</a>` : `<div class="mv">${inner}</div>`;
   }
 
+
+  // ================= قوايم مرتبة (العملاء والموردين / الأصناف) =================
+  function rankAvatar(i) { return `<div class="avatar rank">${i + 1}</div>`; }
+
+  function tabbedList({ title, tabs, storeKey, placeholder, searchFn, searchRow, loadTab }) {
+    let tab = sessionStorage.getItem(storeKey) || tabs[0][0];
+    if (!tabs.some((t) => t[0] === tab)) tab = tabs[0][0];
+    shell({ title }, `
+      <div class="search">${I.search}<input class="input" id="q" type="search" placeholder="${esc(placeholder)}" autocomplete="off"></div>
+      <div class="tabs tabs-${tabs.length}" id="ltabs">${tabs.map(([k, l]) => `<button data-k="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div id="res">${loading}</div>`);
+    const q = document.getElementById("q");
+    const qKey = storeKey + "-q";
+    q.value = sessionStorage.getItem(qKey) || "";
+    let seq = 0, t;
+    const load = async () => {
+      const my = ++seq, v = q.value.trim();
+      sessionStorage.setItem(qKey, v);
+      const res = document.getElementById("res");
+      document.getElementById("ltabs").style.display = v ? "none" : "";
+      try {
+        let html;
+        if (v) {
+          const r = await call(searchFn, { p_q: v, p_limit: 60 });
+          html = staleNote(r) + ((r.data || []).length ? `<div class="list">${r.data.map(searchRow).join("")}</div>` : empty("مفيش نتايج"));
+        } else {
+          html = await loadTab(tab);
+        }
+        if (my === seq && document.getElementById("res")) document.getElementById("res").innerHTML = html;
+      } catch (e) { if (my === seq && res && document.body.contains(res)) res.innerHTML = errBox(e); }
+    };
+    q.oninput = () => { clearTimeout(t); t = setTimeout(load, 300); };
+    document.getElementById("ltabs").onclick = (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      tab = b.dataset.k; sessionStorage.setItem(storeKey, tab);
+      document.querySelectorAll("#ltabs button").forEach((x) => x.classList.toggle("on", x === b));
+      document.getElementById("res").innerHTML = loading;
+      load();
+    };
+    load();
+  }
+
+  function viewItems() {
+    const boss = isBoss();
+    const row = {
+      top: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub">اتباع <b class="num">${qty(i.sold_365)}</b> ${esc(i.unit || "")} في سنة • آخر 3 شهور <span class="num">${qty(i.sold_90)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span></div></div>
+        <div class="end">${i.value_365 != null ? `<div class="bal num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>` : `<div class="bal num">${qty(i.sold_365)}</div><div class="bal-label">اتباع</div>`}</div></a>`,
+      dead: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub">رصيد <b class="num">${qty(i.stock)}</b> ${esc(i.unit || "")} • ${i.last_sale ? `آخر بيع ${fmtDate(i.last_sale)}` : "ما اتباعش خالص"}</div></div>
+        <div class="end">${i.stock_value != null ? `<div class="bal owe num">${money(i.stock_value)}</div><div class="bal-label">قيمة واقفة</div>` : `<div class="bal num">${qty(i.stock)}</div>`}</div></a>`,
+      risk: (i) => stockRow(i),
+      turnover: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
+        <div class="end"><div class="bal credit num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div></div></a>`,
+    };
+    const notes = {
+      top: "مترتبين من الأكثر مبيعاً للأقل (قيمة المبيعات آخر 12 شهر)",
+      dead: "عليهم رصيد وما اتباعوش من 6 شهور أو أكتر — مترتبين بقيمة البضاعة الواقفة",
+      risk: "خلصوا أو تحت مخزون الأمان أو وصلوا نقطة الطلب — والرقم على الشمال هو الكمية المقترحة للطلب",
+      turnover: "أسرع أصناف بتتباع وتتجدد في المخزن (معدل الدوران آخر 12 شهر)",
+    };
+    tabbedList({
+      title: "الأصناف",
+      tabs: [["top", "الأكثر مبيعاً"], ["dead", "الراكد"], ["risk", "قرب يخلص"], ["turnover", "أعلى دوران"]],
+      storeKey: "t-items", placeholder: "اسم الصنف، الكود، أو الباركود",
+      searchFn: "search_items", searchRow: itemRow,
+      loadTab: async (k) => {
+        const r = await call("items_list", { p_kind: k, p_limit: 150 }, { swr: true });
+        const list = r.data || [];
+        return staleNote(r) + `<p class="small muted" style="margin:0 4px 8px">${notes[k]}</p>`
+          + (list.length ? `<div class="list">${list.map((i, n) => row[k](i, n)).join("")}</div>` : empty(k === "risk" || k === "dead" ? "مفيش أصناف هنا 👌" : "مفيش بيانات"));
+      },
+    });
+  }
+
+  function viewParties() {
+    if (!isBoss()) return viewPartiesSimple();
+    const partyLine = (x, sub, amt, cls) => `<a class="list-item" href="#/party/${encodeURIComponent(x.key)}">
+      <div class="avatar">${esc(initial(x.name))}</div><div class="grow"><div class="title ellipsis">${esc(x.name)}</div><div class="sub">${sub}</div></div>
+      ${amt != null ? `<div class="end"><div class="bal ${cls || ""} num">${money(amt)}</div></div>` : ""}</a>`;
+    const section = (title, list, row, note) => !list || !list.length ? "" : `
+      <div class="section-title"><span>${title}</span><small>${list.length}</small></div>
+      ${note ? `<p class="small muted" style="margin:-4px 4px 8px">${note}</p>` : ""}
+      <div class="list">${list.slice(0, 30).map(row).join("")}</div>
+      ${list.length > 30 ? `<p class="small muted center">بيظهر أول 30 — الباقي في تحليل العملاء</p>` : ""}`;
+    tabbedList({
+      title: "العملاء والموردين",
+      tabs: [["owe", "عليهم فلوس"], ["credit", "ليهم فلوس"], ["alerts", "تنبيهات"]],
+      storeKey: "t-parties", placeholder: "اسم، كود، أو رقم موبايل",
+      searchFn: "search_parties", searchRow: partyRow,
+      loadTab: async (k) => {
+        if (k === "owe" || k === "credit") {
+          const r = await call("top_balances", { p_kind: k === "owe" ? "customers" : "suppliers", p_limit: 150 }, { swr: true });
+          const d = r.data || {}, list = d.list || [];
+          return staleNote(r) + `<div class="card row" style="padding:12px 16px"><div class="grow"><div class="small muted">${k === "owe" ? "إجمالي اللي على العملاء" : "إجمالي اللي للموردين"}</div>
+              <div class="bal ${k === "owe" ? "owe" : "credit"} num" style="font-size:22px">${money(d.total)}</div></div><span class="tag">${d.count || 0} ${k === "owe" ? "عميل" : "مورد"}</span></div>
+            ${list.length ? `<div class="list">${list.map(partyRow).join("")}</div>` : empty("مفيش أرصدة")}`;
+        }
+        const [al, st] = await Promise.all([
+          call("alerts_list", {}, { swr: true }),
+          call("customer_analysis", { p_filter: "stopped", p_q: "", p_limit: 100 }, { swr: true }),
+        ]);
+        const a = al.data || {}, stopped = (st.data && st.data.customers) || [];
+        const quiet = [...(a.late_buyers || []).map((x) => ({ ...x, kind: "late" })),
+                       ...stopped.map((c) => ({ key: c.key, name: c.name, days: c.days_since_inv, avg_gap: c.avg_gap, value_12: c.value_12, kind: "stopped" }))];
+        const html = [
+          section("متأخرين في السداد", a.overdue_customers, (x) => partyLine(x, `أقدم فاتورة متدفعتش من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "owe"),
+                  "المبلغ على الشمال هو المتأخر بعد مهلة السداد"),
+          section("مستحق للموردين", a.supplier_dues, (x) => partyLine(x, `أقدم فاتورة من <span class="num">${x.days}</span> يوم • المهلة ${x.grace} يوم`, x.amount, "credit")),
+          section("بقالهم فترة ما اشتروش", quiet, (x) => partyLine(x,
+            `${x.kind === "stopped" ? `<span class="tag red">وقف</span>` : `<span class="tag">متأخر عن عادته</span>`} آخر فاتورة من <span class="num">${x.days}</span> يوم${x.avg_gap ? ` • عادته كل <span class="num">${Math.round(x.avg_gap)}</span> يوم` : ""}`)),
+        ].join("");
+        return staleNote(al) + (html || empty("مفيش تنبيهات دلوقتي 👌"));
+      },
+    });
+  }
+
   // ================= الفاتورة =================
   async function viewInvoice(type, no) {
     const main = shell({ title: `${INV[type] || "فاتورة"} ${no}`, back: true }, loading);
@@ -601,7 +722,7 @@
     </a>`;
   }
 
-  function viewItems() {
+  function viewItemsSimple() {
     const filters = [["all", "الكل"], ["in", "متوفر"], ["zero", "رصيد صفر"]];
     let filter = sessionStorage.getItem("f-items") || "all";
     shell({ title: "الأصناف" }, `
@@ -967,11 +1088,11 @@
       el.innerHTML = `
         <div class="card stack">
           <div class="row">
-            <div class="grow"><b>إشعار التقرير اليومي</b><div class="small muted">كل يوم الساعة 12 بالليل بتوقيت مصر</div></div>
+            <div class="grow"><b>إشعارات التقارير</b><div class="small muted">اليومي كل يوم 12 بالليل • الأسبوعي الخميس 12 بالليل • الشهري آخر يوم في الشهر 12 بالليل • تنبيه المتأخرين في السداد الخميس وآخر الشهر</div></div>
             <label class="switch"><input type="checkbox" id="ptoggle" ${on ? "checked" : ""}><span></span></label>
           </div>
           ${Notification.permission === "denied" ? `<div class="small" style="color:var(--danger)">الإشعارات مقفولة للموقع ده. افتح إعدادات Chrome ← إعدادات المواقع ← الإشعارات، واسمح بيها.</div>` : ""}
-          ${on ? `<button class="btn soft" id="ptest">ابعت إشعار تجربة دلوقتي</button>` : ""}
+          ${on ? `<button class="btn soft" id="ptest">تجربة إشعار التقرير اليومي</button><button class="btn soft" id="ptestw">تجربة إشعار التقرير الأسبوعي</button><button class="btn soft" id="ptestm">تجربة إشعار التقرير الشهري</button><button class="btn soft" id="ptesto">تجربة تنبيه المتأخرين في السداد</button>` : ""}
         </div>`;
     }
     const pon = el.querySelector("#pon");
@@ -989,6 +1110,18 @@
       } catch (e) { toast(e.message || String(e)); }
       renderPushCard(el, full);
     };
+    [["#ptestw", "test_weekly"], ["#ptestm", "test_monthly"], ["#ptesto", "test_overdue"]].forEach(([sel, action]) => {
+      const b = el.querySelector(sel);
+      if (!b) return;
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const r = await fnCall({ action });
+          toast(r.note ? r.note : r.sent ? "اتبعت ✅ هيظهر الإشعار خلال ثواني" : "ما اتبعتش — جرب تقفل الإشعارات وتفتحها تاني");
+        } catch (e) { toast(e.message || String(e)); }
+        b.disabled = false;
+      };
+    });
     const pt = el.querySelector("#ptest");
     if (pt) pt.onclick = async () => {
       pt.disabled = true;
@@ -1122,18 +1255,20 @@
   };
 
   // رسم أعمدة بسيط لآخر 12 شهر (لون واحد، اضغط على أي عمود يظهر رقمه)
-  function barChart(points, title, unit) {
+  function barChart(points, title, unit, opts) {
     if (!points || !points.length) return "";
+    const capOf = (opts && opts.cap) || ((p) => monthName(p.m));
+    const lblOf = (opts && opts.label) || ((p) => Number(String(p.m).split("-")[1]));
     const max = Math.max(...points.map((p) => Number(p.v) || 0), 0);
     const id = "ch" + Math.random().toString(36).slice(2, 8);
     const last = points[points.length - 1];
     return `<div class="chart" id="${id}">
-      <div class="chart-head"><span class="chart-title">${esc(title)}</span><span class="chart-val" data-cap>${esc(monthName(last.m))}: <b class="num">${qty(last.v)}</b> ${esc(unit || "")}</span></div>
+      <div class="chart-head"><span class="chart-title">${esc(title)}</span><span class="chart-val" data-cap>${esc(capOf(last))}: <b class="num">${qty(last.v)}</b> ${esc(unit || "")}</span></div>
       <div class="bars" role="list">${points.map((p, i) => {
         const h = max > 0 ? Math.max(2, Math.round((Number(p.v) || 0) / max * 100)) : 2;
-        return `<button class="bar ${i === points.length - 1 ? "on" : ""} ${(Number(p.v) || 0) <= 0 ? "zero" : ""}" role="listitem" data-m="${esc(p.m)}" data-v="${esc(p.v)}" aria-label="${esc(monthName(p.m))}: ${qty(p.v)}"><span style="height:${h}%"></span></button>`;
+        return `<button class="bar ${i === points.length - 1 ? "on" : ""} ${(Number(p.v) || 0) <= 0 ? "zero" : ""}" role="listitem" data-c="${esc(capOf(p))}" data-v="${esc(p.v)}" aria-label="${esc(capOf(p))}: ${qty(p.v)}"><span style="height:${h}%"></span></button>`;
       }).join("")}</div>
-      <div class="bars-x">${points.map((p) => `<span>${Number(String(p.m).split("-")[1])}</span>`).join("")}</div>
+      <div class="bars-x">${points.map((p) => `<span>${esc(lblOf(p))}</span>`).join("")}</div>
     </div>`;
   }
   function wireCharts(root, unit) {
@@ -1141,7 +1276,7 @@
       const cap = ch.querySelector("[data-cap]");
       const pick = (b) => {
         ch.querySelectorAll(".bar").forEach((x) => x.classList.toggle("on", x === b));
-        cap.innerHTML = `${esc(monthName(b.dataset.m))}: <b class="num">${qty(b.dataset.v)}</b> ${esc(unit || "")}`;
+        cap.innerHTML = `${esc(b.dataset.c)}: <b class="num">${qty(b.dataset.v)}</b> ${esc(unit || "")}`;
       };
       ch.querySelectorAll(".bar").forEach((b) => { b.onclick = () => pick(b); b.onmouseenter = () => pick(b); });
     });
@@ -1163,6 +1298,8 @@
       <div id="toplist">${loading}</div>
       <div class="section-title"><span>التقارير والتحليل</span></div>
       <div class="list">
+        ${hubRow("#/week", "التقرير الأسبوعي", "مقارنة بالأسبوع اللي فات، أكبر العملاء والأصناف، أعمار الديون", I.report)}
+        ${hubRow("#/month", "التقرير الشهري", "مقارنة بالشهر اللي فات في المبيعات والتحصيلات وكل الأرقام", I.report)}
         ${hubRow("#/report/" + addDays(cairoToday(), -1), "تقارير الأيام اللي فاتت", "حركة أي يوم: مبيعات وتحصيلات ومشتريات", I.report)}
         ${hubRow("#/alerts", "التنبيهات", "اللي محتاج تصرف دلوقتي", hubIcon.bell)}
         ${hubRow("#/stock", "تحليل المخزن", "معدل الدوران، نقطة الطلب، الراكد والزيادة", I.box)}
@@ -1222,6 +1359,144 @@
         <a class="kpi" href="#/customers"><div class="k-label">موسمهم قرب</div><div class="k-value num">${c.season_soon || 0}</div><div class="k-sub">من ${c.seasonal || 0} عميل موسمي</div></a>
       </div>
       ${staleNote(st)}`;
+  }
+
+
+  // ---------- التقرير الأسبوعي ----------
+  const WEEKDAY = (iso) => new Intl.DateTimeFormat("ar-EG-u-nu-latn", { weekday: "long", timeZone: "UTC" }).format(new Date(iso + "T12:00:00Z"));
+  const shortDate = (iso) => new Intl.DateTimeFormat("ar-EG-u-nu-latn", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(iso + "T12:00:00Z"));
+  function lastThursday(iso) {
+    const d = new Date(iso + "T12:00:00Z");
+    return addDays(iso, -((d.getUTCDay() - 4 + 7) % 7));
+  }
+  function change(cur, prev) {
+    cur = Number(cur) || 0; prev = Number(prev) || 0;
+    if (!prev && !cur) return "";
+    if (!prev) return `<span class="chg up">جديد</span>`;
+    const p = Math.round(((cur - prev) / prev) * 100);
+    if (p === 0) return `<span class="chg">زي اللي فات</span>`;
+    return `<span class="chg ${p > 0 ? "up" : "down"}">${p > 0 ? "▲" : "▼"} <span class="num">${Math.abs(p)}%</span></span>`;
+  }
+
+  const monthLong = (ym) => new Intl.DateTimeFormat("ar-EG-u-nu-latn", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(ym.slice(0, 7) + "-15T12:00:00Z"));
+  const monthOnly = (ym) => new Intl.DateTimeFormat("ar-EG-u-nu-latn", { month: "long", timeZone: "UTC" }).format(new Date(ym.slice(0, 7) + "-15T12:00:00Z"));
+  function addMonths(ym, n) {
+    const [y, m] = ym.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + n, 15));
+    return d.toISOString().slice(0, 7);
+  }
+  function viewWeek(end) { return viewPeriod("week", end); }
+  function viewMonth(ym) { return viewPeriod("month", ym); }
+
+  // مقارنة صريحة: الفترة دي والفترة اللي قبلها والفرق
+  function compareCard(t, pv, curLabel, prevLabel) {
+    const row = (label, key) => {
+      const c = Number(t[key]) || 0, p = Number(pv[key]) || 0, d = c - p;
+      return `<tr><td><b>${label}</b></td><td class="n">${money(c)}</td><td class="n">${money(p)}</td>
+        <td class="n ${d > 0 ? "plus" : d < 0 ? "minus" : ""}">${d > 0 ? "+" : d < 0 ? "−" : ""}${money(Math.abs(d))}<div>${change(c, p)}</div></td></tr>`;
+    };
+    return `<div class="card compare">
+      <table class="tbl">
+        <thead><tr><th></th><th class="n">${esc(curLabel)}</th><th class="n">${esc(prevLabel)}</th><th class="n">الفرق</th></tr></thead>
+        <tbody>${row("المبيعات", "sales")}${row("التحصيلات", "collections")}</tbody>
+      </table></div>`;
+  }
+
+  async function viewPeriod(kind, key) {
+    if (!isBoss()) { location.hash = "#/"; return; }
+    const today = cairoToday();
+    const isWeek = kind === "week";
+    const end = isWeek ? lastThursday(key || today) : null;
+    const ym = isWeek ? null : (key || today).slice(0, 7);
+    const label = isWeek ? `${shortDate(addDays(end, -6))} – ${shortDate(end)}` : monthLong(ym);
+    const canNext = isWeek ? end < today : ym < today.slice(0, 7);
+    const main = shell({ title: isWeek ? "التقرير الأسبوعي" : "التقرير الشهري", back: true }, `
+      <div class="date-nav">
+        <button class="icon-btn" style="color:var(--accent)" id="prev" aria-label="اللي قبله">${I.back}</button>
+        <div class="input center" style="display:grid;place-items:center;font-weight:700">${esc(label)}</div>
+        <button class="icon-btn" style="color:var(--accent);transform:scaleX(-1)" id="next" aria-label="اللي بعده" ${canNext ? "" : "disabled"}>${I.back}</button>
+      </div>
+      <div id="wk">${loading}</div>`);
+    document.getElementById("prev").onclick = () => (location.hash = isWeek ? "#/week/" + addDays(end, -7) : "#/month/" + addMonths(ym, -1));
+    document.getElementById("next").onclick = () => { if (canNext) location.hash = isWeek ? "#/week/" + addDays(end, 7) : "#/month/" + addMonths(ym, 1); };
+    let r;
+    try { r = isWeek ? await call("weekly_report", { p_end: end }, { swr: true }) : await call("monthly_report", { p_month: ym + "-01" }, { swr: true }); }
+    catch (e) { document.getElementById("wk").innerHTML = errBox(e); return; }
+    const w = r.data || {}, t = w.totals || {}, pv = w.prev || {}, ag = w.aging || {}, cu = w.customers || {}, sk = w.stock || {}, sd = w.supplier_dues || {};
+    const kpi = (label, key, cls, sub) => `<div class="kpi"><div class="k-label">${label}</div><div class="k-value num ${cls || ""}">${money(t[key])}</div>
+      <div class="k-sub">${change(t[key], pv[key])} ${sub || ""}</div></div>`;
+    const days = (w.daily || []).map((d) => ({ v: d.sales, d: d.d }));
+    const inProgress = isWeek ? end >= today : !!w.partial;
+    const curLabel = isWeek ? "الأسبوع ده" : monthOnly(ym);
+    const prevLabel = isWeek ? "الأسبوع اللي فات" : monthOnly(w.prev_start || addMonths(ym, -1));
+    const periodWord = isWeek ? "الأسبوع" : "الشهر";
+    const box = document.getElementById("wk");
+    box.innerHTML = `
+      ${staleNote(r)}
+      <div class="muted center small" style="margin:-4px 0 10px">${inProgress ? periodWord + " ده لحد دلوقتي • " : ""}مقارنة بـ ${esc(shortDate(w.prev_start))} – ${esc(shortDate(w.prev_end))}${inProgress && !isWeek ? " (نفس عدد الأيام)" : ""}</div>
+      ${compareCard(t, pv, curLabel, prevLabel)}
+      <div class="kpis">
+        <div class="kpi hero"><div class="k-label">مبيعات ${periodWord}</div><div class="k-value num">${money(t.sales)}</div>
+          <div class="k-sub">${t.sales_count || 0} فاتورة • ${t.customers || 0} عميل • ${esc(prevLabel)} <span class="num">${money(pv.sales)}</span> ${change(t.sales, pv.sales)}</div></div>
+        ${kpi("التحصيلات", "collections", "plus", `• ${t.collections_count || 0} سند`)}
+        ${kpi("المشتريات", "purchases", "", `• ${t.purchases_count || 0} فاتورة`)}
+        ${kpi("سداد للموردين", "supplier_payments", "minus")}
+        ${kpi("مرتجعات البيع", "sales_returns", "")}
+        ${kpi("المصروفات", "expenses", "")}
+        <div class="kpi"><div class="k-label">آجل من المبيعات</div><div class="k-value num">${money(t.sales_credit)}</div><div class="k-sub">نقدي <span class="num">${money((t.sales || 0) - (t.sales_credit || 0))}</span></div></div>
+      </div>
+      <div class="card">${barChart(days, "المبيعات يوم بيوم", "ج", { cap: (p) => WEEKDAY(p.d) + " " + shortDate(p.d), label: (p) => isWeek ? WEEKDAY(p.d).replace("ال", "").slice(0, 3) : (Number(p.d.slice(8)) % 5 === 1 ? Number(p.d.slice(8)) : "") })}</div>
+
+      ${(w.top_customers || []).length ? `<div class="section-title"><span>أكبر العملاء ${isWeek ? "الأسبوع ده" : "الشهر ده"}</span></div>
+        <div class="list">${w.top_customers.map((c) => `<a class="list-item" ${c.key ? `href="#/party/${encodeURIComponent(c.key)}"` : ""}>
+          <div class="avatar">${esc(initial(c.name))}</div><div class="grow"><div class="title ellipsis">${esc(c.name)}</div><div class="sub">${c.invoices} فاتورة</div></div>
+          <div class="end"><div class="bal num">${money(c.sales)}</div></div></a>`).join("")}</div>` : ""}
+
+      ${(w.top_items || []).length ? `<div class="section-title"><span>أكتر الأصناف مبيعاً</span></div>
+        <div class="list">${w.top_items.map((i) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">
+          <div class="grow"><div class="title ellipsis">${esc(i.name)}</div><div class="sub">اتباع <b class="num">${qty(i.qty)}</b> ${esc(i.unit || "")} • الرصيد دلوقتي <span class="num ${Number(i.stock) <= 0 ? "minus" : ""}">${qty(i.stock)}</span></div></div>
+          <div class="end"><div class="bal num">${money(i.value)}</div></div></a>`).join("")}</div>` : ""}
+
+      ${(w.top_suppliers || []).length ? `<div class="section-title"><span>أكبر الموردين (مشتريات)</span></div>
+        <div class="list">${w.top_suppliers.map((s) => `<a class="list-item" ${s.key ? `href="#/party/${encodeURIComponent(s.key)}"` : ""}>
+          <div class="grow"><div class="title ellipsis">${esc(s.name)}</div><div class="sub">${s.invoices} فاتورة</div></div>
+          <div class="end"><div class="bal num">${money(s.purchases)}</div></div></a>`).join("")}</div>` : ""}
+
+      ${(w.new_customers || []).length ? `<div class="section-title"><span>عملاء جداد</span><small>${w.new_customers.length}</small></div>
+        <div class="list">${w.new_customers.map((c) => `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}">
+          <div class="grow"><div class="title ellipsis">${esc(c.name)}</div><div class="sub">أول فاتورة ${fmtDate(c.first)}</div></div>
+          <div class="end"><div class="bal num">${money(c.sales)}</div></div></a>`).join("")}</div>` : ""}
+
+      <div class="section-title"><span>أعمار الديون على العملاء</span><small>الإجمالي <span class="num">${money(ag.total)}</span></small></div>
+      <div class="card">
+        <div class="kvs">
+          <div class="kv"><span>أقل من شهر</span><b class="num">${money(ag.d0_30)}</b></div>
+          <div class="kv"><span>من شهر لشهرين</span><b class="num">${money(ag.d31_60)}</b></div>
+          <div class="kv"><span>من شهرين لـ 3 شهور</span><b class="num">${money(ag.d61_90)}</b></div>
+          <div class="kv"><span>أكتر من 3 شهور</span><b class="num minus">${money(ag.d90)}</b></div>
+        </div>
+        <div class="stat-boxes">
+          <a class="stat-box alt" href="#/customers" onclick="sessionStorage.setItem('f-cust','overdue')"><div class="sb-l">متأخرين في السداد</div><div class="sb-v num">${cu.overdue || 0}</div><div class="sb-s">مبلغ <span class="num">${money(cu.overdue_amount)}</span></div></a>
+          <a class="stat-box" href="#/customers" onclick="sessionStorage.setItem('f-cust','stopped')"><div class="sb-l">عملاء وقفوا شراء</div><div class="sb-v num">${cu.stopped || 0}</div><div class="sb-s">متأخرين في الشراء ${cu.late || 0}</div></a>
+        </div>
+      </div>
+      ${(cu.top_overdue || []).length ? `<div class="section-title"><span>أكبر المتأخرين في السداد</span></div>
+        <div class="list">${cu.top_overdue.map((c) => `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}"><div class="grow"><div class="title ellipsis">${esc(c.name)}</div>
+          <div class="sub">أقدم فاتورة من <span class="num">${c.days}</span> يوم</div></div><div class="end"><div class="bal owe num">${money(c.amount)}</div></div></a>`).join("")}</div>` : ""}
+      ${(cu.top_stopped || []).length ? `<div class="section-title"><span>أكبر العملاء اللي وقفوا</span></div>
+        <div class="list">${cu.top_stopped.map((c) => `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}"><div class="grow"><div class="title ellipsis">${esc(c.name)}</div>
+          <div class="sub">آخر فاتورة من <span class="num">${c.days}</span> يوم</div></div><div class="end"><div class="bal num">${money(c.value_12)}</div><div class="bal-label">مشتريات سنة</div></div></a>`).join("")}</div>` : ""}
+
+      <div class="section-title"><span>صحة المخزون</span></div>
+      <div class="kpis">
+        <a class="kpi" href="#/stock" onclick="sessionStorage.setItem('f-stock','attention')"><div class="k-label">محتاج طلب</div><div class="k-value num">${(sk.out || 0) + (sk.below_safety || 0) + (sk.reorder || 0)}</div><div class="k-sub">نفد ${sk.out || 0} • تحت الأمان ${sk.below_safety || 0} • وقت الطلب ${sk.reorder || 0}</div></a>
+        <a class="kpi" href="#/stock" onclick="sessionStorage.setItem('f-stock','dead')"><div class="k-label">راكد</div><div class="k-value num">${sk.dead || 0}</div><div class="k-sub">بقيمة <span class="num">${money(sk.dead_value)}</span></div></a>
+        <div class="kpi"><div class="k-label">قيمة المخزون</div><div class="k-value num">${money(sk.stock_value)}</div><div class="k-sub">زيادة عن الحد ${sk.over || 0} صنف</div></div>
+        <div class="kpi"><div class="k-label">دوران المخزن</div><div class="k-value num">${turnTxt(sk.turnover_365)}</div><div class="k-sub">مرة في السنة</div></div>
+      </div>
+      ${sd.count ? `<a class="card row" href="#/alerts" style="color:inherit"><div class="grow"><b>مستحق للموردين بعد المهلة</b><div class="small muted">${sd.count} مورد</div></div><div class="bal num">${money(sd.amount)}</div></a>` : ""}
+      <div class="muted small center" style="margin:12px 0">آخر تحديث من جهاز الحسابات ${esc(ago(w.last_sync))}</div>`;
+    wireCharts(box, "ج");
   }
 
   // ---------- تحليل المخزن ----------
@@ -1307,8 +1582,9 @@
       <div class="end">${right}</div></a>`;
   }
 
-  function viewCustomers() {
+  function viewCustomers(f) {
     if (!isBoss()) { location.hash = "#/"; return; }
+    if (f) sessionStorage.setItem("f-cust", f);
     const filters = [["overdue", "متأخر في السداد"], ["late", "متأخر في الشراء"], ["stopped", "متوقف"], ["seasonal", "موسمي"],
       ["A", "فئة A"], ["B", "فئة B"], ["C", "فئة C"], ["all", "الكل"]];
     let filter = sessionStorage.getItem("f-cust") || "overdue";
@@ -1615,8 +1891,10 @@
     [/^#\/user\/([0-9a-f-]+)$/, viewUser],
     [/^#\/me$/, viewMe],
     [/^#\/reports$/, viewReports],
+    [/^#\/week(?:\/(\d{4}-\d{2}-\d{2}))?$/, viewWeek],
+    [/^#\/month(?:\/(\d{4}-\d{2}))?$/, viewMonth],
     [/^#\/stock$/, viewStock],
-    [/^#\/customers$/, viewCustomers],
+    [/^#\/customers(?:\/([a-zA-Z]+))?$/, viewCustomers],
     [/^#\/alerts$/, viewAlerts],
     [/^#\/settings$/, viewSettings],
   ];
