@@ -707,7 +707,7 @@
         <div class="title ellipsis">${esc(p.name)}</div>
         <div class="sub">${kind} • كود <span class="num">${esc(code)}</span>${p.last_date ? ` • آخر حركة ${fmtDate(p.last_date)}` : ""}</div>
       </div>
-      <div class="end">${balHtml(p.balance)}${p.spark ? sparkSvg(p.spark, Number(p.balance) > 0 ? "#F57C00" : "#1E7FD8") : ""}</div>
+      <div class="end">${balHtml(p.balance)}</div>
     </a>`;
   }
 
@@ -905,10 +905,11 @@
       ${list.length > 30 ? `<p class="small muted center">بيظهر أول 30 — الباقي في تحليل العملاء</p>` : ""}`;
     tabbedList({
       title: "العملاء والموردين",
-      tabs: [["owe", "عليهم فلوس"], ["credit", "ليهم فلوس"], ["alerts", "تنبيهات"]],
+      tabs: [["owe", "عليهم فلوس"], ["credit", "ليهم فلوس"], ["alerts", "تنبيهات"], ["elite", "النخبة"]],
       storeKey: "t-parties", placeholder: "اسم، كود، أو رقم موبايل",
       searchFn: "search_parties", searchRow: partyRow,
       loadTab: async (k) => {
+        if (k === "elite") return eliteTab();
         if (k === "owe" || k === "credit") {
           const r = await call("top_balances", { p_kind: k === "owe" ? "customers" : "suppliers", p_limit: 150 }, { swr: true });
           const d = r.data || {}, list = d.list || [];
@@ -933,6 +934,47 @@
         return staleNote(al) + (html || empty("مفيش تنبيهات دلوقتي 👌"));
       },
     });
+  }
+
+  // ---------- عملاء النخبة: ترتيب أحسن العملاء ----------
+  const CLASS = { A: { t: "كلاس A", n: "ذهبي" }, B: { t: "كلاس B", n: "فضي" }, C: { t: "كلاس C", n: "برونزي" } };
+  async function eliteTab() {
+    const r = await call("elite_customers", { p_limit: 300 }, { swr: true });
+    const list = r.data || [];
+    if (!list.length) return staleNote(r) + empty("مفيش بيانات كفاية لترتيب العملاء لسه");
+    const f = sessionStorage.getItem("elite-f") || "all";
+    const counts = { A: 0, B: 0, C: 0 };
+    list.forEach((c) => (counts[c.abc] = (counts[c.abc] || 0) + 1));
+    const why = (c) => {
+      const p = [];
+      p.push(c.pay_status === "overdue" ? `<span class="minus">متأخر في السداد</span>` : `<span class="plus">ملتزم في السداد</span>`);
+      if (c.buy_status === "stopped") p.push(`<span class="minus">وقف شراء</span>`);
+      else if (c.buy_status === "late") p.push(`<span class="minus">متأخر عن عادته</span>`);
+      else if (c.avg_gap) p.push(`بيشتري كل <span class="num">${c.avg_gap}</span> يوم`);
+      p.push(`<span class="num">${c.inv_12}</span> فاتورة`);
+      return p.join(" • ");
+    };
+    const row = (c, i) => `<a class="list-item elite-row" href="#/party/${encodeURIComponent(c.key)}">
+        <div class="medal ${c.abc}${i < 3 ? " top" : ""}"><span class="num">${c.rank}</span></div>
+        <div class="grow"><div class="title ellipsis">${esc(c.name)}</div><div class="sub">${why(c)}</div></div>
+        <div class="end"><div class="score-pill s${c.score >= 85 ? 3 : c.score >= 65 ? 2 : 1}"><b class="num">${c.score}</b><small>/100</small></div>
+          <div class="bal-label"><span class="num">${money(c.value_12)}</span> في السنة</div></div></a>`;
+    const groups = ["A", "B", "C"].filter((k) => f === "all" || f === k).map((k) => {
+      const g = list.filter((c) => c.abc === k);
+      if (!g.length) return "";
+      return `<div class="class-head ${k}"><span class="ch-badge">${k}</span><div class="grow"><b>${CLASS[k].t} — ${CLASS[k].n}</b><div class="small">${g.length} عميل</div></div></div>
+        <div class="list">${g.map((c, i) => row(c, i)).join("")}</div>`;
+    }).join("");
+    setTimeout(() => {
+      const ch = document.getElementById("elitef");
+      if (ch) ch.onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; sessionStorage.setItem("elite-f", b.dataset.f); document.getElementById("ltabs").querySelector("button.on").click(); };
+    }, 0);
+    return staleNote(r) + `
+      <div class="elite-intro"><div class="ei-ico">★</div><div class="grow"><b>عملاء النخبة</b>
+        <div class="small">مرتبين بالكلاس، وجوه كل كلاس بدرجة من 100: انتظام الشراء (35) + الالتزام في السداد (35) + حجم التعامل (30)</div></div></div>
+      <div class="chips" id="elitef">${[["all", "الكل"], ["A", `ذهبي A (${counts.A || 0})`], ["B", `فضي B (${counts.B || 0})`], ["C", `برونزي C (${counts.C || 0})`]]
+        .map(([k, l]) => `<button class="chip ${k === f ? "on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
+      ${groups}`;
   }
 
   // ================= الفاتورة =================
@@ -1045,9 +1087,12 @@
     const periods = [[90, "3 شهور"], [365, "سنة"], [3650, "من الأول"]];
     main.innerHTML = `
       ${staleNote(r)}
-      <div class="hero-card">
+      <div class="hero-card item-hero">
         <div class="lbl">الرصيد الحالي</div>
-        <div class="big num">${qty(v.stock)} <span style="font-size:16px">${esc(v.unit || "")}</span></div>
+        <div class="ih-row">
+          <div class="ih-name">${esc(v.name)}</div>
+          <div class="ih-stock ${Number(v.stock) <= 0 ? "zero" : ""}"><b class="num">${qty(v.stock)}</b><span>${esc(v.unit || "رصيد")}</span></div>
+        </div>
         <div class="meta">
           <span>كود <b class="num">${esc(v.code)}</b></span>
           ${v.subgroup ? `<span>${esc(v.subgroup)}</span>` : ""}
@@ -1277,7 +1322,8 @@
         </div>
       </div>
       <div id="install"></div>
-      ${isBoss() ? `<div class="section-title"><span>الإشعارات</span></div><div id="push"></div>` : ""}
+      ${isBoss() ? `<div class="section-title"><span>الإشعارات</span></div><div id="push"></div>
+        <div class="section-title"><span>آخر الإشعارات اللي اتبعتت</span><small>من السيرفر</small></div><div id="pushlog">${loading}</div>` : ""}
       ${isAdmin() ? `<div class="section-title"><span>الإدارة</span></div>
         <div class="list"><a class="list-item" href="#/users"><div class="avatar">${I.people}</div><div class="grow"><div class="title">المستخدمين والصلاحيات</div><div class="sub">موافقة الحسابات الجديدة وتحديد عملاء كل مندوب</div></div>${I.chev}</a>
         <a class="list-item" href="#/settings"><div class="avatar">${hubIcon.gear}</div><div class="grow"><div class="title">إعدادات التحليل</div><div class="sub">مهلة السداد، مدة التوريد، وإعادة الحساب</div></div>${I.chev}</a></div>` : ""}
@@ -1288,7 +1334,21 @@
         <div class="small muted center">الإصدار ${esc(CFG.version)}</div>
       </div>`);
     renderInstallCard();
-    if (isBoss()) renderPushCard(document.getElementById("push"), true);
+    if (isBoss()) {
+      renderPushCard(document.getElementById("push"), true);
+      call("recent_pushes", { p_limit: 12 }).then((r) => {
+        const el = document.getElementById("pushlog");
+        if (!el) return;
+        const list = r.data || [];
+        const at = (ts) => new Intl.DateTimeFormat("ar-EG-u-nu-latn", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(ts));
+        el.innerHTML = list.length ? `<div class="list">${list.map((x) => `<div class="mv">
+            <div class="t">${esc(x.title)}</div><div class="amt small muted">${esc(at(x.at))}</div>
+            <div class="d ellipsis">${esc(x.body || "")}</div><div class="run">${x.acked_at ? `<span class="plus">✓ وصل الموبايل ${esc(at(x.acked_at).split("،").pop().trim())}</span>`
+              : x.kind === "event" ? "" : x.n === 0 ? `<span class="minus">مفيش موبايل مشترك</span>` : `<span class="muted">اتبعت${x.resends ? ` (واتعاد ${x.resends} مرة)` : ""}</span>`}</div></div>`).join("")}</div>
+            <p class="small muted" style="margin:8px 4px 0">«وصل الموبايل» معناها إن الموبايل استلم الإشعار فعلاً. لو ما وصلش خلال ربع ساعة، السيرفر بيبعته تاني لحد 3 مرات.</p>`
+          : empty("لسه مفيش إشعارات اتبعتت");
+      }).catch((e) => { const el = document.getElementById("pushlog"); if (el) el.innerHTML = errBox(e); });
+    }
     document.getElementById("logout").onclick = logout;
     document.getElementById("clear").onclick = () => { cacheClear(); toast("اتمسحت البيانات المحفوظة"); };
   }
@@ -1940,7 +2000,7 @@
       const none = rows.every((R) => !R.ct && !R.pt);
       setVerdict(none ? "مفيش حركة" : LV[overall.lv].t, none ? "" : LV[overall.lv].c);
       verdictEl.classList.remove("in"); void verdictEl.offsetWidth; verdictEl.classList.add("in");
-      if (!none) { emoEl.src = `emoji/${EMO[overall.lv]}.webp`; emoEl.classList.add("on"); emoEl.dataset.lv = overall.lv; }
+      if (!none) { emoEl.src = `${EMO[overall.lv]}.webp`; emoEl.classList.add("on"); emoEl.dataset.lv = overall.lv; }
       if (animate && !none && overall.lv >= 1) setTimeout(() => celebrate(heroEl, emoEl, overall.lv >= 2), 650);
       dayEl.innerHTML = rows.filter((R) => R.pt || R.ct).map((R) => `<div class="mo-m"><span>${R.k === "sales" ? "المبيعات" : "التحصيلات"}</span>
         <b class="num" style="color:${LV[R.mood.lv].c}">${!R.pt ? "جديد" : signPct(R.pct)}</b></div>`).join("") || esc(o.doneText || "");
@@ -1969,11 +2029,13 @@
       setGauge(0, 0);
       dayEl.innerHTML = "&nbsp;";
     }
-    function play() {
+    // elapsed: لو الصفحة اتحدثت والحركة شغالة، نكمل من نفس النقطة بدل ما نقفز للآخر
+    function play(elapsed) {
+      elapsed = typeof elapsed === "number" ? elapsed : 0;
       cancelAnimationFrame(raf);
-      motionPlayed[o.key] = Date.now();
+      if (!elapsed) motionPlayed[o.key] = Date.now();
       reset();
-      const t0 = performance.now();
+      const t0 = performance.now() - elapsed;
       let fin = false;
       const step = (now) => {
         if (!document.body.contains(el)) return;
@@ -1998,20 +2060,22 @@
     }
     function finalState() { rows.forEach((R) => { draw(R, 1); chip(R, true); }); finale(false); }
     rows.forEach(build);
-    el.querySelector("[data-replay]").onclick = play;
-    el.querySelectorAll(".mo-plot").forEach((p) => (p.onclick = play));
-    el.querySelector(".mo-gauge").onclick = play;
+    el.querySelector("[data-replay]").onclick = () => play(0);
+    el.querySelectorAll(".mo-plot").forEach((p) => (p.onclick = () => play(0)));
+    el.querySelector(".mo-gauge").onclick = () => play(0);
     let rz = 0;
     const onResize = () => { if (!document.body.contains(el)) { removeEventListener("resize", onResize); return; }
       clearTimeout(rz); rz = setTimeout(() => rows.forEach((R) => { const t = R.t; build(R); draw(R, t); }), 120); };
     addEventListener("resize", onResize);
-    const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const recently = motionPlayed[o.key] && Date.now() - motionPlayed[o.key] < 60000;
-    if (reduce || recently || !("IntersectionObserver" in window)) { finalState(); return; }
+    const since = motionPlayed[o.key] ? Date.now() - motionPlayed[o.key] : null;
+    const total = DUR + STAGGER * (rows.length - 1) + 200;
+    if (since != null && since < total) { play(since); return; }          // اتحدثت وهي شغالة: كمّل
+    if (since != null && since < 60000) { finalState(); return; }          // لسه متفرج عليها حالاً
     reset();
+    if (!("IntersectionObserver" in window)) { setTimeout(() => play(0), 300); return; }
     const io = new IntersectionObserver((ents) => {
-      if (ents.some((e) => e.isIntersecting)) { io.disconnect(); setTimeout(play, 300); }
-    }, { threshold: 0.3 });
+      if (ents.some((e) => e.isIntersecting)) { io.disconnect(); setTimeout(() => play(0), 300); }
+    }, { threshold: 0.2 });
     io.observe(el);
   }
 

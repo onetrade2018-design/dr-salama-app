@@ -1,16 +1,19 @@
 // مخزن د/محمد سلامه — Service Worker: تشغيل بدون إنترنت + الإشعارات
-const VERSION = "v2.0.0";
+const VERSION = "v2.3.0";
 const SHELL = `shell-${VERSION}`;
 const FILES = [
   "./", "./index.html", "./styles.css", "./app.js", "./config.js",
   "./vendor/supabase.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/badge-96.png",
-  "./fonts/plex-arabic-400.woff2", "./fonts/plex-arabic-500.woff2", "./fonts/plex-arabic-600.woff2", "./fonts/plex-arabic-700.woff2", "./fonts/plex-latin-400.woff2", "./fonts/plex-latin-500.woff2", "./fonts/plex-latin-600.woff2", "./fonts/plex-latin-700.woff2",
-  "./emoji/m2.webp", "./emoji/m1.webp", "./emoji/m0.webp", "./emoji/n1.webp", "./emoji/n2.webp",
+  "./plex-arabic-400.woff2", "./plex-arabic-500.woff2", "./plex-arabic-600.woff2", "./plex-arabic-700.woff2", "./plex-latin-400.woff2", "./plex-latin-500.woff2", "./plex-latin-600.woff2", "./plex-latin-700.woff2",
+  "./m2.webp", "./m1.webp", "./m0.webp", "./n1.webp", "./n2.webp",
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // كل ملف لوحده: لو ملف واحد ناقص على السيرفر، التحديث يكمل عادي ومايقفش
+  e.waitUntil(caches.open(SHELL)
+    .then((c) => Promise.allSettled(FILES.map((f) => c.add(new Request(f, { cache: "reload" })))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -41,19 +44,36 @@ self.addEventListener("fetch", (e) => {
   })());
 });
 
+// إعدادات السحابة (نفس ملف التطبيق) عشان نبعت إيصال الاستلام
+self.window = self;
+try { importScripts("config.js"); } catch (err) { /* */ }
+
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: "مخزن د/محمد سلامه", body: e.data ? e.data.text() : "" }; }
-  e.waitUntil(self.registration.showNotification(d.title || "مخزن د/محمد سلامه", {
-    body: d.body || "",
-    tag: d.tag || undefined,
-    renotify: !!d.tag,
-    dir: "rtl",
-    lang: "ar",
-    icon: "icons/icon-192.png",
-    badge: "icons/badge-96.png",
-    data: { url: d.url || "./" },
-  }));
+  e.waitUntil((async () => {
+    await self.registration.showNotification(d.title || "مخزن د/محمد سلامه", {
+      body: d.body || "",
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      dir: "rtl",
+      lang: "ar",
+      icon: "icons/icon-192.png",
+      badge: "icons/badge-96.png",
+      data: { url: d.url || "./" },
+    });
+    // إيصال استلام: السيرفر يعرف إن الإشعار وصل، ولو ما وصلش بيعيد الإرسال
+    const cfg = self.APP_CONFIG;
+    if (!cfg || !d.tag) return;
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      await fetch(cfg.url + "/rest/v1/rpc/push_ack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: cfg.key, Authorization: "Bearer " + cfg.key },
+        body: JSON.stringify({ p_tag: d.tag, p_endpoint: sub ? sub.endpoint : null }),
+      });
+    } catch (err) { /* مفيش نت: السيرفر هيعيد الإرسال */ }
+  })());
 });
 
 self.addEventListener("notificationclick", (e) => {
