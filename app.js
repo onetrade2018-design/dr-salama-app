@@ -2449,6 +2449,9 @@
       const payLine = c.pay_status === "overdue"
         ? `<div class="card soft" style="margin:0;background:var(--danger-soft);border-color:transparent;color:var(--danger)"><b>متأخر في السداد — عليه <span class="num">${money(c.overdue_amount)}</span></b><div class="small">ما دفعش أي دفعة من <span class="num">${c.oldest_days}</span> يوم${c.last_pay ? ` (آخر دفعة ${fmtDate(c.last_pay)})` : ""} • المهلة ${c.grace_days} يوم</div></div>`
         : c.balance > 0 ? `<div class="small" style="color:var(--success);font-weight:700">ملتزم في السداد${c.last_pay ? ` — آخر دفعة ${fmtDate(c.last_pay)}` : ""} (المهلة ${c.grace_days} يوم)</div>` : "";
+      const GSRC = { learned: "محسوبة من عادته في الدفع", manual: "متحددة يدوي", system: "من برنامج الحسابات", default: "المهلة الافتراضية" };
+      const habitLine = `<div class="habit">${I.clock}<div>${c.pay_med_gap ? `عادته يدفع كل <b class="num">${Math.round(c.pay_med_gap)}</b> يوم تقريباً <span class="muted">(من ${c.pay_n} دفعة آخر سنة ونص)</span><br>` : ""}
+        مهلة السداد بتاعته <b class="num">${c.grace_days}</b> يوم <span class="muted">— ${GSRC[c.grace_source] || ""}</span></div></div>`;
       const buyLine = c.buy_status === "stopped" ? `<span class="tag red">متوقف عن الشراء</span>` : c.buy_status === "late" ? `<span class="tag">متأخر في الشراء</span>` : "";
       const hs = healthScore(c);
       html += `
@@ -2460,6 +2463,7 @@
             ${c.locked ? `<span class="tag">🔒 قيم يدوية</span>` : ""} ${c.excluded ? `<span class="tag gray">مستبعد من التنبيهات</span>` : ""}
           </div>
           ${payLine}
+          ${habitLine}
           <div class="kpis" style="margin:0">
             <div class="kpi"><div class="k-label">مشترياته آخر 12 شهر</div><div class="k-value num">${money(c.value_12)}</div><div class="k-sub">${c.inv_12 || 0} فاتورة</div></div>
             <div class="kpi"><div class="k-label">متوسط الفاتورة</div><div class="k-value num">${money(c.avg_invoice)}</div><div class="k-sub">${c.avg_gap ? `بيشتري كل <span class="num">${Math.round(c.avg_gap)}</span> يوم` : "&nbsp;"}</div></div>
@@ -2523,7 +2527,7 @@
     box.innerHTML = `
       <div class="card soft" style="margin:0">
         <p class="small" style="margin-top:0">سيب أي خانة فاضية تفضل تلقائي.</p>
-        <label class="field"><span>مهلة السداد بالأيام (الحالية ${c.grace_days})</span><input class="input" inputmode="numeric" id="p_grace" value="${c.o_grace != null ? c.o_grace : ""}"></label>
+        <label class="field"><span>مهلة السداد بالأيام (الحالية ${c.grace_days})</span><input class="input" inputmode="numeric" id="p_grace" value="${c.o_grace != null ? c.o_grace : ""}"><small class="muted">سيبها فاضية والنظام يحسبها من عادة العميل في الدفع</small></label>
         <label class="field"><span>نبهني لو ما اشتراش بعد كام يوم${c.buy_alert_days ? ` (الحالي ${c.buy_alert_days})` : ""}</span><input class="input" inputmode="numeric" id="p_buy" value="${c.o_buy != null ? c.o_buy : ""}"></label>
         <label class="field"><span>نمط الشراء (التلقائي: ${esc(PATTERN[c.auto_pattern] || "—")})</span><select class="input" id="p_pat">${opt(PATTERN, c.o_pattern)}</select></label>
         <label class="field"><span>التصنيف (التلقائي: ${esc(c.auto_abc || "—")})</span><select class="input" id="p_abc"><option value="">تلقائي</option>${["A", "B", "C"].map((x) => `<option ${c.o_rating === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
@@ -2564,7 +2568,7 @@
 
   // ---------- إعدادات التحليل (للمدير) ----------
   const SETTINGS = [
-    ["default_pay_grace_days", "مهلة السداد الافتراضية (يوم)", "العميل يعتبر متأخر لو عليه فلوس وعدت المدة دي من غير ما يدفع أي دفعة من حسابه"],
+    ["default_pay_grace_days", "مهلة السداد الافتراضية (يوم)", "كل عميل ليه مهلة محسوبة من عادته في الدفع (لو دفع 3 مرات على الأقل). الرقم ده للعملاء الجداد أو اللي مالهمش دفعات كفاية، وأقل مهلة لأي عميل"],
     ["lead_time_days", "مدة التوريد (يوم)", "من وقت ما تطلب البضاعة لحد ما توصل المخزن"],
     ["order_cycle_days", "الطلبية تكفي كام يوم", "بتحدد الحد الأقصى للمخزون"],
     ["service_z", "معامل الأمان", "1.65 يغطي 95% من تقلبات البيع — كل ما يزيد يزيد مخزون الأمان"],

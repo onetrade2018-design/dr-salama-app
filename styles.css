@@ -660,3 +660,7 @@ main.enter { animation: page-in .32s cubic-bezier(.2,.7,.2,1); }
   font-size: 15px; font-weight: 700; border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
 .list-item .end .bal.val-pill + .bal-label { margin-top: 3px; }
 @media (prefers-color-scheme: dark) { .bal.val-pill { color: #9CCBF6; } }
+/* عادة العميل في الدفع */
+.habit { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.7; background: var(--blue-soft); border-radius: 12px; padding: 10px 12px; color: var(--ink); }
+.habit svg { width: 20px; height: 20px; color: var(--accent); flex: none; margin-top: 3px; }
+.habit b { color: var(--accent-strong); }
