@@ -648,3 +648,15 @@ main.enter { animation: page-in .32s cubic-bezier(.2,.7,.2,1); }
 .item-hero .ih-stock span { font-size: 12px; color: rgba(255,255,255,.7); }
 .item-hero .ih-stock.zero { background: rgba(239,91,91,.16); border-color: rgba(239,91,91,.45); }
 .item-hero .ih-stock.zero b { color: #FF8A80; }
+/* كارت العميل: الاسم بالبرتقالي وقدامه الرصيد */
+.party-hero .ih-stock b { font-size: 24px; }
+.party-hero .ih-stock { max-width: 48%; }
+.party-hero .ih-stock.bal-owe { background: rgba(255,163,71,.14); border-color: rgba(255,163,71,.45); }
+.party-hero .ih-stock.bal-owe b { color: #FFB46B; }
+.party-hero .ih-stock.bal-credit { background: rgba(108,179,243,.14); border-color: rgba(108,179,243,.45); }
+.party-hero .ih-stock.bal-credit b { color: #9CCBF6; }
+/* الأرقام اللي قدام الأصناف: أزرق مميز */
+.bal.val-pill { display: inline-block; padding: 3px 10px; border-radius: 10px; background: var(--blue-soft); color: var(--accent-strong);
+  font-size: 15px; font-weight: 700; border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
+.list-item .end .bal.val-pill + .bal-label { margin-top: 3px; }
+@media (prefers-color-scheme: dark) { .bal.val-pill { color: #9CCBF6; } }

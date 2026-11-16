@@ -762,11 +762,13 @@
     const linked = p.is_customer && p.is_supplier;
     main.innerHTML = `
       ${staleNote(r)}
-      <div class="hero-card">
-        <div class="lbl">${bi.cls === "zero" ? "الحساب" : bi.label}</div>
-        <div class="big num ${bi.cls === "owe" ? "owe" : ""}">${bi.cls === "zero" ? "خالص" : bi.text}</div>
+      <div class="hero-card item-hero party-hero">
+        <div class="lbl">${kind}</div>
+        <div class="ih-row">
+          <div class="ih-name">${esc(p.name)}</div>
+          <div class="ih-stock bal-${bi.cls}"><b class="num">${bi.cls === "zero" ? "0" : bi.text}</b><span>${bi.cls === "zero" ? "خالص" : bi.label}</span></div>
+        </div>
         <div class="meta">
-          <span class="tag">${kind}</span>
           ${p.customer_code ? `<span>كود عميل <b class="num">${esc(p.customer_code)}</b></span>` : ""}
           ${p.supplier_code ? `<span>كود مورد <b class="num">${esc(p.supplier_code)}</b></span>` : ""}
           ${p.phone ? `<a href="tel:${esc(p.phone)}" class="num">${esc(p.phone)}</a>` : ""}
@@ -862,7 +864,7 @@
       top: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">اتباع <b class="num">${qty(i.sold_365)}</b> ${esc(i.unit || "")} في سنة • آخر 3 شهور <span class="num">${qty(i.sold_90)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span></div></div>
-        <div class="end">${i.value_365 != null ? `<div class="bal num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>` : `<div class="bal num">${qty(i.sold_365)}</div><div class="bal-label">اتباع</div>`}${sparkSvg(monthVals(i.monthly))}</div></a>`,
+        <div class="end">${i.value_365 != null ? `<div class="bal val-pill num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>` : `<div class="bal val-pill num">${qty(i.sold_365)}</div><div class="bal-label">اتباع</div>`}</div></a>`,
       dead: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">رصيد <b class="num">${qty(i.stock)}</b> ${esc(i.unit || "")} • ${i.last_sale ? `آخر بيع ${fmtDate(i.last_sale)}` : "ما اتباعش خالص"}</div></div>
@@ -871,11 +873,11 @@
       turnover: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
-        <div class="end"><div class="bal credit num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div>${sparkSvg(monthVals(i.monthly), "#2FB27A")}</div></a>`,
+        <div class="end"><div class="bal val-pill num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div></div></a>`,
     };
     const notes = {
       top: "مترتبين من الأكثر مبيعاً للأقل (قيمة المبيعات آخر 12 شهر)",
-      dead: "عليهم رصيد وما اتباعوش من 6 شهور أو أكتر — مترتبين بقيمة البضاعة الواقفة",
+      dead: "عليهم رصيد وما اتباعوش من شهر أو أكتر (المدة بتتغير من إعدادات التحليل) — مترتبين بقيمة البضاعة الواقفة",
       risk: "خلصوا أو تحت مخزون الأمان أو وصلوا نقطة الطلب — والرقم على الشمال هو الكمية المقترحة للطلب",
       turnover: "أسرع أصناف بتتباع وتتجدد في المخزن (معدل الدوران آخر 12 شهر)",
     };
