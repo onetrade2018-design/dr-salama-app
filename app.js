@@ -875,7 +875,7 @@
         <div class="end">${i.suggest_qty > 0 ? `<div class="bal owe num">${qty(i.suggest_qty)}</div><div class="bal-label">اطلب</div>` : `<div class="bal val-pill num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>`}</div></a>`,
       out: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
-        <div class="sub"><span class="tag red">خلص</span> ${i.days_out > 0 ? `${daysTxt(i.days_out)} • ` : ""}اتباع <span class="num">${qty(i.sold_365)}</span> ${esc(i.unit || "")} في سنة${i.last_sale ? ` • آخر بيع ${fmtDate(i.last_sale)}` : ""}</div></div>
+        <div class="sub">${Number(i.stock) < 0 ? `<span class="tag red">رصيد بالسالب <span class="num">${qty(i.stock)}</span></span>` : `<span class="tag red">خلص</span>`} ${i.days_out > 0 ? `${daysTxt(i.days_out)} • ` : ""}اتباع <span class="num">${qty(i.sold_365)}</span> ${esc(i.unit || "")} في سنة${i.last_sale ? ` • آخر بيع ${fmtDate(i.last_sale)}` : ""}</div></div>
         <div class="end">${i.suggest_qty > 0 ? `<div class="bal owe num">${qty(i.suggest_qty)}</div><div class="bal-label">اطلب</div>` : `<div class="bal val-pill num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>`}</div></a>`,
       turnover: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
@@ -1638,10 +1638,10 @@
   async function viewReports() {
     if (!isBoss()) { location.hash = "#/"; return; }
     let kind = sessionStorage.getItem("top-kind") || "customers";
-    const kinds = [["customers", "العملاء"], ["suppliers", "الموردين"], ["stock", "المخزن"]];
+    const kinds = [["customers", "العملاء"], ["suppliers", "الموردين"], ["stock", "المخزن"], ["turnover", "معدل الدوران"]];
     const main = shell({ title: "التقارير والأرصدة" }, `
-      <div class="section-title"><span>أكبر الأرصدة</span><small id="toptot"></small></div>
-      <div class="tabs" id="ktabs">${kinds.map(([k, l]) => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="section-title"><span id="toptitle">أكبر الأرصدة</span><small id="toptot"></small></div>
+      <div class="tabs tabs-4" id="ktabs">${kinds.map(([k, l]) => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${l}</button>`).join("")}</div>
       <div id="toplist">${loading}</div>
       <div class="section-title"><span>التقارير والتحليل</span></div>
       <div class="list">
@@ -1649,7 +1649,6 @@
         ${hubRow("#/month", "التقرير الشهري", "مقارنة بالشهر اللي فات في المبيعات والتحصيلات وكل الأرقام", I.report)}
         ${hubRow("#/report/" + addDays(cairoToday(), -1), "تقارير الأيام اللي فاتت", "حركة أي يوم: مبيعات وتحصيلات ومشتريات", I.report)}
         ${hubRow("#/alerts", "التنبيهات", "اللي محتاج تصرف دلوقتي", hubIcon.bell)}
-        ${hubRow("#/turnover", "معدل دوران المخزون", "الأصناف مترتبة من الأعلى دوراناً للأقل", I.refresh)}
         ${hubRow("#/stock", "تحليل المخزن", "نقطة الطلب، الراكد والزيادة", I.box)}
         ${hubRow("#/customers", "تحليل العملاء", "الانتظام، التصنيف، المتأخرين في السداد والشراء", I.people)}
         ${isAdmin() ? hubRow("#/settings", "إعدادات التحليل", "مدة التوريد، مهلة السداد، وإعادة الحساب", hubIcon.gear) : ""}
@@ -1659,7 +1658,20 @@
       const box = document.getElementById("toplist"), tot = document.getElementById("toptot");
       if (!box) return;
       box.innerHTML = loading; tot.textContent = "";
+      const tt = document.getElementById("toptitle"); if (tt) tt.textContent = kind === "turnover" ? "معدل دوران المخزن" : "أكبر الأرصدة";
       try {
+        if (kind === "turnover") {
+          const r = await call("items_list", { p_kind: "turnover", p_limit: 20 }, { swr: true });
+          if (!document.getElementById("toplist")) return;
+          const list = r.data || [];
+          tot.textContent = "من الأعلى دوراناً للأقل";
+          box.innerHTML = staleNote(r) + (list.length ? `<div class="list">${list.map((i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+              <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+              <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
+              <div class="end"><div class="bal val-pill num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div></div></a>`).join("")}</div>
+            <a class="btn ghost more" href="#/turnover">كل الأصناف بمعدل الدوران</a>` : empty("مفيش بيانات كفاية لحساب الدوران"));
+          return;
+        }
         const r = await call("top_balances", { p_kind: kind, p_limit: 20 }, { swr: true });
         if (!document.getElementById("toplist")) return;
         const d = r.data || {}, list = d.list || [];
