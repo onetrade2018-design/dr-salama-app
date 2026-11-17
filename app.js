@@ -292,7 +292,7 @@
     const h = location.hash;
     if (h.startsWith("#/part")) return "parties";
     if (h.startsWith("#/item")) return "items";
-    if (/^#\/(report|week|month|stock|customers|alerts|settings)/.test(h)) return "report";
+    if (/^#\/(report|week|month|stock|turnover|customers|alerts|settings)/.test(h)) return "report";
     if (h.startsWith("#/me") || h.startsWith("#/user")) return "me";
     if (h.startsWith("#/invoice")) return "";
     return "home";
@@ -869,7 +869,14 @@
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">رصيد <b class="num">${qty(i.stock)}</b> ${esc(i.unit || "")} • ${i.last_sale ? `آخر بيع ${fmtDate(i.last_sale)}` : "ما اتباعش خالص"}</div></div>
         <div class="end">${i.stock_value != null ? `<div class="bal owe num">${money(i.stock_value)}</div><div class="bal-label">قيمة واقفة</div>` : `<div class="bal num">${qty(i.stock)}</div>`}</div></a>`,
-      risk: (i) => stockRow(i),
+      risk: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub">${tagStatus(i.status)} رصيد <b class="num">${qty(i.stock)}</b> ${esc(i.unit || "")}${i.days_cover != null ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""} • اتباع <span class="num">${qty(i.sold_365)}</span> في سنة</div></div>
+        <div class="end">${i.suggest_qty > 0 ? `<div class="bal owe num">${qty(i.suggest_qty)}</div><div class="bal-label">اطلب</div>` : `<div class="bal val-pill num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>`}</div></a>`,
+      out: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub"><span class="tag red">خلص</span> ${i.days_out > 0 ? `${daysTxt(i.days_out)} • ` : ""}اتباع <span class="num">${qty(i.sold_365)}</span> ${esc(i.unit || "")} في سنة${i.last_sale ? ` • آخر بيع ${fmtDate(i.last_sale)}` : ""}</div></div>
+        <div class="end">${i.suggest_qty > 0 ? `<div class="bal owe num">${qty(i.suggest_qty)}</div><div class="bal-label">اطلب</div>` : `<div class="bal val-pill num">${money(i.value_365)}</div><div class="bal-label">مبيعات سنة</div>`}</div></a>`,
       turnover: (i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
         <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
         <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
@@ -878,19 +885,20 @@
     const notes = {
       top: "مترتبين من الأكثر مبيعاً للأقل (قيمة المبيعات آخر 12 شهر)",
       dead: "عليهم رصيد وما اتباعوش من شهر أو أكتر (المدة بتتغير من إعدادات التحليل) — مترتبين بقيمة البضاعة الواقفة",
-      risk: "خلصوا أو تحت مخزون الأمان أو وصلوا نقطة الطلب — والرقم على الشمال هو الكمية المقترحة للطلب",
+      risk: "لسه فيهم رصيد بس نزلوا تحت مخزون الأمان أو وصلوا حد الطلب — مترتبين بالأكثر مبيعاً، والرقم على الشمال هو الكمية المقترحة للطلب",
+      out: "رصيدهم خلص (صفر أو بالسالب) — مترتبين بالأكثر مبيعاً عشان تجيب المهم الأول",
       turnover: "أسرع أصناف بتتباع وتتجدد في المخزن (معدل الدوران آخر 12 شهر)",
     };
     tabbedList({
       title: "الأصناف",
-      tabs: [["top", "الأكثر مبيعاً"], ["dead", "الراكد"], ["risk", "قرب يخلص"], ["turnover", "أعلى دوران"]],
+      tabs: [["top", "الأكثر مبيعاً"], ["risk", "قرب يخلص"], ["out", "خلص"], ["dead", "الراكد"]],
       storeKey: "t-items", placeholder: "اسم الصنف، الكود، أو الباركود",
       searchFn: "search_items", searchRow: itemRow,
       loadTab: async (k) => {
-        const r = await call("items_list", { p_kind: k, p_limit: 150 }, { swr: true });
+        const r = await call("items_list", { p_kind: k, p_limit: k === "out" ? 200 : 150 }, { swr: true });
         const list = r.data || [];
         return staleNote(r) + `<p class="small muted" style="margin:0 4px 8px">${notes[k]}</p>`
-          + (list.length ? `<div class="list">${list.map((i, n) => row[k](i, n)).join("")}</div>` : empty(k === "risk" || k === "dead" ? "مفيش أصناف هنا 👌" : "مفيش بيانات"));
+          + (list.length ? `<div class="list">${list.map((i, n) => row[k](i, n)).join("")}</div>` : empty(k === "risk" || k === "dead" || k === "out" ? "مفيش أصناف هنا 👌" : "مفيش بيانات"));
       },
     });
   }
@@ -1641,7 +1649,8 @@
         ${hubRow("#/month", "التقرير الشهري", "مقارنة بالشهر اللي فات في المبيعات والتحصيلات وكل الأرقام", I.report)}
         ${hubRow("#/report/" + addDays(cairoToday(), -1), "تقارير الأيام اللي فاتت", "حركة أي يوم: مبيعات وتحصيلات ومشتريات", I.report)}
         ${hubRow("#/alerts", "التنبيهات", "اللي محتاج تصرف دلوقتي", hubIcon.bell)}
-        ${hubRow("#/stock", "تحليل المخزن", "معدل الدوران، نقطة الطلب، الراكد والزيادة", I.box)}
+        ${hubRow("#/turnover", "معدل دوران المخزون", "الأصناف مترتبة من الأعلى دوراناً للأقل", I.refresh)}
+        ${hubRow("#/stock", "تحليل المخزن", "نقطة الطلب، الراكد والزيادة", I.box)}
         ${hubRow("#/customers", "تحليل العملاء", "الانتظام، التصنيف، المتأخرين في السداد والشراء", I.people)}
         ${isAdmin() ? hubRow("#/settings", "إعدادات التحليل", "مدة التوريد، مهلة السداد، وإعادة الحساب", hubIcon.gear) : ""}
       </div>
@@ -2129,7 +2138,7 @@
 
       ${(w.top_customers || []).length ? `<div class="section-title"><span>أكبر العملاء ${isWeek ? "الأسبوع ده" : "الشهر ده"}</span></div>
         <div class="list">${w.top_customers.map((c) => `<a class="list-item" ${c.key ? `href="#/party/${encodeURIComponent(c.key)}"` : ""}>
-          <div class="avatar">${esc(initial(c.name))}</div><div class="grow"><div class="title ellipsis">${esc(c.name)}</div><div class="sub">${c.invoices} فاتورة</div></div>
+          ${rankAvatar(w.top_customers.indexOf(c))}<div class="grow"><div class="title ellipsis">${esc(c.name)}</div><div class="sub">${c.invoices} فاتورة</div></div>
           <div class="end"><div class="bal num">${money(c.sales)}</div></div></a>`).join("")}</div>` : ""}
 
       ${(w.top_items || []).length ? `<div class="section-title"><span>أكتر الأصناف مبيعاً</span></div>
@@ -2204,6 +2213,27 @@
       <div class="end">${right}</div></a>`;
   }
 
+  // ---------- تقرير معدل دوران المخزون ----------
+  async function viewTurnover() {
+    if (!isBoss()) { location.hash = "#/"; return; }
+    shell({ title: "معدل دوران المخزون", back: true }, `
+      <div class="elite-intro"><div class="ei-ico">↻</div><div class="grow"><b>معدل الدوران</b>
+        <div class="small">الصنف بيتباع ويتجدد في المخزن كام مرة في السنة = مبيعات آخر 12 شهر ÷ متوسط الرصيد. كل ما الرقم يعلى، الصنف بيلف أسرع وفلوسه مش واقفة.</div></div></div>
+      <div id="tov">${loading}</div>`);
+    let r;
+    try { r = await call("items_list", { p_kind: "turnover", p_limit: 300 }, { swr: true }); }
+    catch (e) { document.getElementById("tov").innerHTML = errBox(e); return; }
+    const list = r.data || [];
+    const el = document.getElementById("tov");
+    if (!el) return;
+    el.innerHTML = staleNote(r) + (list.length ? `<p class="small muted" style="margin:0 4px 8px">${list.length} صنف — الأصناف اللي كانت موجودة في المخزن أغلب السنة بس، عشان الرقم يبقى صح</p>
+      <div class="list">${list.map((i, n) => `<a class="list-item" href="#/item/${encodeURIComponent(i.code)}">${rankAvatar(n)}
+        <div class="grow"><div class="title ellipsis">${esc(i.name)}</div>
+        <div class="sub">بيع شهري <span class="num">${qty(i.avg_month)}</span> • رصيد <span class="num ${i.stock <= 0 ? "minus" : ""}">${qty(i.stock)}</span>${i.days_cover != null && i.stock > 0 ? ` • يكفي <span class="num">${qty(i.days_cover)}</span> يوم` : ""}</div></div>
+        <div class="end"><div class="bal val-pill num">${turnTxt(i.turnover_365)}</div><div class="bal-label">مرة في السنة</div></div></a>`).join("")}</div>`
+      : empty("مفيش بيانات كفاية لحساب الدوران"));
+  }
+
   function viewStock() {
     if (!isBoss()) { location.hash = "#/"; return; }
     const filters = [["attention", "محتاج تصرف"], ["out", "نفد"], ["below_safety", "تحت الأمان"], ["reorder", "وقت الطلب"],
@@ -2263,8 +2293,11 @@
     if (!right) right = `<div class="bal num">${money(c.value_12)}</div><div class="bal-label">مشتريات سنة</div>`;
     const ptag = c.pattern ? `<span class="tag gray">${esc(PATTERN[c.pattern] || c.pattern)}</span>` : "";
     const btag = c.buy_status === "stopped" ? `<span class="tag red">متوقف</span>` : c.buy_status === "late" ? `<span class="tag">متأخر في الشراء</span>` : "";
+    const av = c.pay_status === "overdue" ? `<div class="avatar k-late">${I.clock}</div>`
+      : c.buy_status === "stopped" ? `<div class="avatar k-stop">${I.pause}</div>`
+      : `<div class="avatar k-credit">${I.cust}${c.abc ? `<i class="abc ${esc(c.abc)}">${esc(c.abc)}</i>` : ""}</div>`;
     return `<a class="list-item" href="#/party/${encodeURIComponent(c.key)}">
-      <div class="avatar">${esc(initial(c.name))}</div>
+      ${av}
       <div class="grow"><div class="title ellipsis">${esc(c.name)}</div>
         <div class="sub">${tagAbc(c.abc)} ${ptag} ${btag} ${sub.join(" • ")}</div></div>
       <div class="end">${right}</div></a>`;
@@ -2643,6 +2676,7 @@
     [/^#\/week(?:\/(\d{4}-\d{2}-\d{2}))?$/, viewWeek],
     [/^#\/month(?:\/(\d{4}-\d{2}))?$/, viewMonth],
     [/^#\/stock$/, viewStock],
+    [/^#\/turnover$/, viewTurnover],
     [/^#\/customers(?:\/([a-zA-Z]+))?$/, viewCustomers],
     [/^#\/alerts$/, viewAlerts],
     [/^#\/settings$/, viewSettings],

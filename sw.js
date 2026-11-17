@@ -1,5 +1,5 @@
 // مخزن د/محمد سلامه — Service Worker: تشغيل بدون إنترنت + الإشعارات
-const VERSION = "v2.5.0";
+const VERSION = "v2.6.1";
 const SHELL = `shell-${VERSION}`;
 const FILES = [
   "./", "./index.html", "./styles.css", "./app.js", "./config.js",
